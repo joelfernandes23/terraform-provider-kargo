@@ -1,0 +1,7 @@
+# Copy to ~/.terraformrc — update path to your GOBIN (go env GOPATH)/bin
+provider_installation {
+  dev_overrides {
+    "joelfernandes23/kargo" = "/Users/joelfernandes/go/bin"
+  }
+  direct {}
+}

@@ -1,0 +1,31 @@
+---
+page_title: "Provider: Kargo"
+description: |-
+  The Kargo provider is used to interact with the Kargo continuous delivery platform.
+---
+
+# Kargo Provider
+
+The Kargo provider is used to manage resources in [Kargo](https://kargo.io/), a continuous delivery and application lifecycle orchestration platform for Kubernetes.
+
+## Authentication
+
+The provider supports the following authentication methods:
+
+- **Bearer token** - Use a pre-obtained bearer token (e.g., from OIDC or a ServiceAccount)
+- **Admin password** - Use the Kargo admin account password to obtain a token automatically
+
+Configuration can be provided directly in the provider block or via environment variables:
+
+| Provider Attribute         | Environment Variable              |
+|---------------------------|-----------------------------------|
+| `api_url`                 | `KARGO_API_URL`                   |
+| `bearer_token`            | `KARGO_BEARER_TOKEN`              |
+| `admin_password`          | `KARGO_ADMIN_PASSWORD`            |
+| `insecure_skip_tls_verify`| `KARGO_INSECURE_SKIP_TLS_VERIFY`  |
+
+## Example Usage
+
+{{ tffile "examples/provider/main.tf" }}
+
+{{ .SchemaMarkdown | trimspace }}

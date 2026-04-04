@@ -1,0 +1,17 @@
+api:
+  service:
+    type: NodePort
+    nodePort: 31443
+  tls:
+    enabled: true
+  adminAccount:
+    enabled: true
+    # bcrypt hash of "admin" — for local dev only
+    passwordHash: "$2a$10$Ge3COpwba9fzbTZb5IsCJeTExH4P9ROgrdivxefaVXn.z2iEJ0OVO"
+    tokenSigningKey: "iwishtowashmyirishwristwatch"
+  oidc:
+    enabled: false
+
+controller:
+  argocd:
+    namespace: argocd
