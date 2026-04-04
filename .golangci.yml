@@ -27,7 +27,7 @@ linters:
       - linters: [revive]
         text: "package-comments"
 
-linters-settings:
+settings:
   misspell:
     locale: US
   gocritic:
