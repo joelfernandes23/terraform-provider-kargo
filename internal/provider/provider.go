@@ -8,6 +8,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/joelfernandes23/terraform-provider-kargo/internal/client"
 )
 
 var _ provider.Provider = &KargoProvider{}
@@ -17,9 +18,9 @@ type KargoProvider struct {
 }
 
 type KargoProviderModel struct {
-	APIURL               types.String `tfsdk:"api_url"`
-	BearerToken          types.String `tfsdk:"bearer_token"`
-	AdminPassword        types.String `tfsdk:"admin_password"`
+	APIURL                types.String `tfsdk:"api_url"`
+	BearerToken           types.String `tfsdk:"bearer_token"`
+	AdminPassword         types.String `tfsdk:"admin_password"`
 	InsecureSkipTLSVerify types.Bool   `tfsdk:"insecure_skip_tls_verify"`
 }
 
@@ -62,7 +63,21 @@ func (p *KargoProvider) Configure(ctx context.Context, req provider.ConfigureReq
 		return
 	}
 
-	// TODO: client initialization with env var fallback and auth flow
+	cfg := client.Config{
+		APIURL:                data.APIURL.ValueString(),
+		BearerToken:           data.BearerToken.ValueString(),
+		AdminPassword:         data.AdminPassword.ValueString(),
+		InsecureSkipTLSVerify: data.InsecureSkipTLSVerify.ValueBool(),
+	}
+
+	kargoClient, err := client.NewClient(ctx, cfg)
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to configure Kargo client", err.Error())
+		return
+	}
+
+	resp.DataSourceData = kargoClient
+	resp.ResourceData = kargoClient
 }
 
 func (p *KargoProvider) Resources(_ context.Context) []func() resource.Resource {

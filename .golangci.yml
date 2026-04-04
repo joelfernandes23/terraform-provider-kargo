@@ -11,8 +11,43 @@ linters:
     - unused
     - ineffassign
     - misspell
-    - gofmt
+    - gosec
+    - bodyclose
+    - gocritic
+    - errorlint
+    - copyloopvar
+    - nilerr
+    - unconvert
+    - unparam
+    - revive
+  exclusions:
+    rules:
+      - linters: [revive]
+        text: "exported"
+      - linters: [revive]
+        text: "package-comments"
 
 linters-settings:
   misspell:
     locale: US
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - performance
+      - style
+  revive:
+    rules:
+      - name: blank-imports
+      - name: context-as-argument
+      - name: dot-imports
+      - name: error-return
+      - name: error-strings
+      - name: error-naming
+      - name: increment-decrement
+      - name: var-naming
+      - name: range
+      - name: receiver-naming
+      - name: indent-error-flow
+      - name: empty-block
+      - name: superfluous-else
+      - name: unreachable-code
