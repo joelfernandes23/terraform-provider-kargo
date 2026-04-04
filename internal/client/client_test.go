@@ -269,7 +269,7 @@ func TestDo(t *testing.T) {
 		cancel()
 
 		c := &Client{baseURL: srv.URL, token: "tok", httpClient: srv.Client()}
-		err := c.Do(ctx, "Cancelled", struct{}{}, nil)
+		err := c.Do(ctx, "Canceled", struct{}{}, nil)
 		assertErrorContains(t, err, "executing request")
 	})
 }
@@ -277,7 +277,7 @@ func TestDo(t *testing.T) {
 func TestDoUnary_MarshalError(t *testing.T) {
 	c := &Client{baseURL: "http://localhost", token: "tok", httpClient: &http.Client{}}
 	err := c.Do(context.Background(), "Test", make(chan int), nil)
-	assertErrorContains(t, err, "marshalling request")
+	assertErrorContains(t, err, "marshaling request")
 }
 
 func TestDoUnary_InvalidURL(t *testing.T) {
@@ -345,7 +345,7 @@ func assertSuffix(t *testing.T, s, suffix string) {
 }
 
 func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsInner(s, substr))
+	return len(s) >= len(substr) && (s == substr || s != "" && containsInner(s, substr))
 }
 
 func containsInner(s, substr string) bool {

@@ -13,6 +13,15 @@ repos:
       - id: golangci-lint
         args: [--timeout=5m]
 
+  - repo: local
+    hooks:
+      - id: golangci-lint-config-verify
+        name: golangci-lint config verify
+        entry: golangci-lint config verify
+        language: system
+        pass_filenames: false
+        files: \.golangci\.yml$
+
   - repo: https://github.com/antonbabenko/pre-commit-terraform
     rev: v1.99.2
     hooks:

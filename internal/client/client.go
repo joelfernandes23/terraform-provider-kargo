@@ -116,7 +116,7 @@ func (c *Client) adminLogin(ctx context.Context, password string) (string, error
 func (c *Client) doUnary(ctx context.Context, method string, reqBody any, auth bool) ([]byte, error) {
 	body, err := json.Marshal(reqBody)
 	if err != nil {
-		return nil, fmt.Errorf("marshalling request: %w", err)
+		return nil, fmt.Errorf("marshaling request: %w", err)
 	}
 
 	url := c.baseURL + servicePath + "/" + method
@@ -149,7 +149,7 @@ func (c *Client) doUnary(ctx context.Context, method string, reqBody any, auth b
 }
 
 // Do makes an authenticated Connect RPC call and unmarshals the response into dest.
-func (c *Client) Do(ctx context.Context, method string, reqBody any, dest any) error {
+func (c *Client) Do(ctx context.Context, method string, reqBody, dest any) error {
 	respBody, err := c.doUnary(ctx, method, reqBody, true)
 	if err != nil {
 		return err
