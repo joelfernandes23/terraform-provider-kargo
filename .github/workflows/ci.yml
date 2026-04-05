@@ -87,10 +87,12 @@ jobs:
 
       - name: Upload coverage
         uses: codecov/codecov-action@v5
+        if: ${{ !cancelled() }}
         with:
           files: coverage.out
           flags: unit
-          fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
   acceptance:
     name: Acceptance Tests
@@ -140,7 +142,9 @@ jobs:
 
       - name: Upload acceptance coverage
         uses: codecov/codecov-action@v5
+        if: ${{ !cancelled() }}
         with:
           files: coverage-acc.out
           flags: acceptance
-          fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false

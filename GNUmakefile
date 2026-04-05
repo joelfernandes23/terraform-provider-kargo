@@ -7,6 +7,7 @@ install:
 	go install -v ./...
 
 lint:
+	golangci-lint config verify
 	golangci-lint run
 
 generate:
@@ -66,8 +67,13 @@ devenv-status: ## Show cluster status and env vars
 	@echo ""
 	@kubectl get pods -n kargo
 
+ci: lint test ## Run what CI runs (lint + unit tests)
+	@go mod tidy && git diff --exit-code go.mod go.sum
+	@go vet ./...
+	@test -z "$$(gofmt -l .)"
+
 devenv-down: ## Tear down Kind cluster
 	kind delete cluster --name $(CLUSTER_NAME)
 
-.PHONY: build install lint generate fmt test testacc \
+.PHONY: build install lint generate fmt test testacc ci \
 	devenv-up cluster cert-manager argocd kargo devenv-status devenv-down
