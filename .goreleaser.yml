@@ -47,11 +47,11 @@ signs:
       - "${artifact}"
 
 release:
-  # release-please creates the GitHub Release; GoReleaser just uploads assets
+  # GoReleaser creates the GitHub Release (supports immutable releases)
+  # release-please only creates the tag + CHANGELOG.md
   disable: false
   draft: false
-  replace_existing_artifacts: true
 
 changelog:
-  disable: true
-  # release-please manages the changelog
+  # Use CHANGELOG.md maintained by release-please as release notes
+  use: github-native
