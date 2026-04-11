@@ -47,11 +47,11 @@ signs:
       - "${artifact}"
 
 release:
-  draft: true
+  # release-please creates the GitHub Release; GoReleaser just uploads assets
+  disable: false
+  draft: false
+  replace_existing_artifacts: true
 
 changelog:
-  sort: asc
-  filters:
-    exclude:
-      - "^docs:"
-      - "^test:"
+  disable: true
+  # release-please manages the changelog

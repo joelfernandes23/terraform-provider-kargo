@@ -28,6 +28,9 @@ linters:
         - diagnostic
         - performance
         - style
+      disabled-checks:
+        # terraform-plugin-framework dictates these method signatures
+        - hugeParam
     revive:
       rules:
         - name: blank-imports
