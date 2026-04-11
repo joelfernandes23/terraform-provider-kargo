@@ -1,0 +1,28 @@
+repos:
+  - repo: https://github.com/dnephin/pre-commit-golang
+    rev: v0.5.1
+    hooks:
+      - id: go-fmt
+      - id: go-vet
+        exclude: ^tools/
+      - id: go-mod-tidy
+
+  - repo: https://github.com/golangci/golangci-lint
+    rev: v2.1.6
+    hooks:
+      - id: golangci-lint
+        args: [--timeout=5m]
+
+  - repo: local
+    hooks:
+      - id: golangci-lint-config-verify
+        name: golangci-lint config verify
+        entry: golangci-lint config verify
+        language: system
+        pass_filenames: false
+        files: \.golangci\.yml$
+
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.99.2
+    hooks:
+      - id: terraform_fmt
