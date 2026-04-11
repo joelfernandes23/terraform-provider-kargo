@@ -41,6 +41,7 @@ func TestResolveEnvDefaults(t *testing.T) {
 	})
 
 	t.Run("insecure defaults to false", func(t *testing.T) {
+		t.Setenv(envInsecureSkipTLSVerify, "")
 		cfg := Config{}
 		cfg.resolveEnvDefaults()
 
@@ -78,11 +79,14 @@ func TestResolveEnvDefaults(t *testing.T) {
 }
 
 func TestNewClient_MissingAPIURL(t *testing.T) {
+	t.Setenv(envAPIURL, "")
 	_, err := NewClient(context.Background(), Config{BearerToken: "tok"})
 	assertErrorContains(t, err, "api_url is required")
 }
 
 func TestNewClient_MissingAuth(t *testing.T) {
+	t.Setenv(envBearerToken, "")
+	t.Setenv(envAdminPassword, "")
 	_, err := NewClient(context.Background(), Config{APIURL: "https://example.com"})
 	assertErrorContains(t, err, "authentication required")
 }
