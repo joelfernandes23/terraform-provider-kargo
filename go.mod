@@ -1,6 +1,6 @@
 module github.com/joelfernandes23/terraform-provider-kargo
 
-go 1.26.1
+go 1.26.2
 
 require (
 	github.com/hashicorp/terraform-plugin-docs v0.24.0
