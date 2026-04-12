@@ -161,7 +161,22 @@ func (c *Client) doUnary(ctx context.Context, method string, reqBody any, auth b
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("RPC %s returned %d: %s", method, resp.StatusCode, string(respBody))
+		apiErr := &APIError{
+			HTTPStatus: resp.StatusCode,
+			Method:     method,
+		}
+		var connectErr struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		}
+		if json.Unmarshal(respBody, &connectErr) == nil && connectErr.Code != "" {
+			apiErr.Code = connectErr.Code
+			apiErr.Message = connectErr.Message
+		} else {
+			apiErr.Code = "unknown"
+			apiErr.Message = string(respBody)
+		}
+		return nil, apiErr
 	}
 
 	return respBody, nil

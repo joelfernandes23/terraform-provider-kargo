@@ -243,7 +243,22 @@ func TestDo(t *testing.T) {
 
 		c := &Client{baseURL: srv.URL, token: "tok", httpClient: srv.Client()}
 		err := c.Do(context.Background(), "Missing", struct{}{}, nil)
-		assertErrorContains(t, err, "returned 404")
+		assertErrorContains(t, err, "HTTP 404")
+	})
+
+	t.Run("non-200 with Connect error JSON", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"code":"not_found","message":"thing not found"}`))
+		}))
+		defer srv.Close()
+
+		c := &Client{baseURL: srv.URL, token: "tok", httpClient: srv.Client()}
+		err := c.Do(context.Background(), "Missing", struct{}{}, nil)
+		assertErrorContains(t, err, "not_found")
+		if !IsNotFound(err) {
+			t.Error("expected IsNotFound to return true")
+		}
 	})
 
 	t.Run("bad response JSON returns error", func(t *testing.T) {
