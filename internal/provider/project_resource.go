@@ -44,6 +44,7 @@ func (r *ProjectResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
+				Validators: rfc1123NameValidators(),
 			},
 			"id": schema.StringAttribute{
 				Computed:    true,

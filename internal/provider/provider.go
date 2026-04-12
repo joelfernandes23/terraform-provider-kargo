@@ -7,6 +7,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/joelfernandes23/terraform-provider-kargo/internal/client"
 )
@@ -36,6 +37,9 @@ func (p *KargoProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp
 			"api_url": schema.StringAttribute{
 				Optional:    true,
 				Description: "The URL of the Kargo API. Can also be set with the KARGO_API_URL environment variable.",
+				Validators: []validator.String{
+					urlFormatValidator(),
+				},
 			},
 			"bearer_token": schema.StringAttribute{
 				Optional:    true,
