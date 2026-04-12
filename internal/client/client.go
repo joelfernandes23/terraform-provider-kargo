@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 const (
@@ -19,6 +20,8 @@ const (
 	envBearerToken           = "KARGO_BEARER_TOKEN" //nolint:gosec // env var name, not a credential
 	envAdminPassword         = "KARGO_ADMIN_PASSWORD"
 	envInsecureSkipTLSVerify = "KARGO_INSECURE_SKIP_TLS_VERIFY"
+
+	defaultTimeout = 30 * time.Second
 )
 
 type Config struct {
@@ -26,7 +29,17 @@ type Config struct {
 	BearerToken           string
 	AdminPassword         string
 	InsecureSkipTLSVerify bool
+	Timeout               time.Duration
 }
+
+// KargoClient defines the Kargo API operations available to Terraform resources.
+type KargoClient interface {
+	CreateProject(ctx context.Context, name string) (*Project, error)
+	GetProject(ctx context.Context, name string) (*Project, error)
+	DeleteProject(ctx context.Context, name string) error
+}
+
+var _ KargoClient = (*Client)(nil)
 
 type Client struct {
 	baseURL    string
@@ -56,7 +69,13 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 		return nil, fmt.Errorf("api_url is required (set via provider config or %s)", envAPIURL)
 	}
 
+	timeout := cfg.Timeout
+	if timeout == 0 {
+		timeout = defaultTimeout
+	}
+
 	httpClient := &http.Client{
+		Timeout: timeout,
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: cfg.InsecureSkipTLSVerify, //nolint:gosec // user-configured for self-signed certs in dev

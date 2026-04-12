@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestResolveEnvDefaults(t *testing.T) {
@@ -315,6 +316,41 @@ func TestNewClient_EnvVarAuth(t *testing.T) {
 	c, err := NewClient(context.Background(), Config{})
 	assertNoError(t, err)
 	assertEqual(t, "env-jwt", c.token)
+}
+
+func TestNewClient_DefaultTimeout(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		t.Error("no requests expected")
+	}))
+	defer srv.Close()
+
+	c, err := NewClient(context.Background(), Config{
+		APIURL:      srv.URL,
+		BearerToken: "tok",
+	})
+	assertNoError(t, err)
+
+	if c.httpClient.Timeout != 30*time.Second {
+		t.Errorf("expected 30s timeout, got %v", c.httpClient.Timeout)
+	}
+}
+
+func TestNewClient_CustomTimeout(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		t.Error("no requests expected")
+	}))
+	defer srv.Close()
+
+	c, err := NewClient(context.Background(), Config{
+		APIURL:      srv.URL,
+		BearerToken: "tok",
+		Timeout:     10 * time.Second,
+	})
+	assertNoError(t, err)
+
+	if c.httpClient.Timeout != 10*time.Second {
+		t.Errorf("expected 10s timeout, got %v", c.httpClient.Timeout)
+	}
 }
 
 func assertEqual(t *testing.T, expected, actual string) {
