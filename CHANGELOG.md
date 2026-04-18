@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.0](https://github.com/joelfernandes23/terraform-provider-kargo/compare/v0.1.1...v0.2.0) (2026-04-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* client interface, timeout, typed errors, and input validators ([#8](https://github.com/joelfernandes23/terraform-provider-kargo/issues/8))
+
+### Features
+
+* client interface, timeout, typed errors, and input validators ([#8](https://github.com/joelfernandes23/terraform-provider-kargo/issues/8)) ([bb53b01](https://github.com/joelfernandes23/terraform-provider-kargo/commit/bb53b01472bcd63b332d7a6108026ec338c43158))
+
 ## [0.1.1](https://github.com/joelfernandes23/terraform-provider-kargo/compare/v0.1.0...v0.1.1) (2026-04-11)
 
 
