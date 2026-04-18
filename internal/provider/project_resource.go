@@ -18,7 +18,7 @@ var (
 )
 
 type ProjectResource struct {
-	client *client.Client
+	client client.KargoClient
 }
 
 type ProjectResourceModel struct {
@@ -44,6 +44,7 @@ func (r *ProjectResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
+				Validators: rfc1123NameValidators(),
 			},
 			"id": schema.StringAttribute{
 				Computed:    true,
@@ -61,11 +62,11 @@ func (r *ProjectResource) Configure(_ context.Context, req resource.ConfigureReq
 		return
 	}
 
-	c, ok := req.ProviderData.(*client.Client)
+	c, ok := req.ProviderData.(client.KargoClient)
 	if !ok {
 		resp.Diagnostics.AddError(
 			"Unexpected Resource Configure Type",
-			fmt.Sprintf("Expected *client.Client, got: %T", req.ProviderData),
+			fmt.Sprintf("Expected client.KargoClient, got: %T", req.ProviderData),
 		)
 		return
 	}
