@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/joelfernandes23/terraform-provider-kargo/compare/v0.3.0...v0.3.1) (2026-04-28)
+
+
+### Features
+
+* Add Warehouse resource ([#13](https://github.com/joelfernandes23/terraform-provider-kargo/issues/13)) ([868bc35](https://github.com/joelfernandes23/terraform-provider-kargo/commit/868bc35782452ff073eb35300e6aa111cc782b9f))
+
 ## [0.3.0](https://github.com/joelfernandes23/terraform-provider-kargo/compare/v0.2.0...v0.3.0) (2026-04-28)
 
 
