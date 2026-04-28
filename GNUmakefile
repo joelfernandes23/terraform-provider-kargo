@@ -13,6 +13,11 @@ lint:
 generate:
 	go generate ./...
 
+docs:
+	go run github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs generate \
+		--provider-name kargo \
+		--rendered-provider-name Kargo
+
 fmt:
 	gofmt -s -w .
 
@@ -75,5 +80,5 @@ ci: lint test ## Run what CI runs (lint + unit tests)
 devenv-down: ## Tear down Kind cluster
 	kind delete cluster --name $(CLUSTER_NAME)
 
-.PHONY: build install lint generate fmt test testacc ci \
+.PHONY: build install lint generate docs fmt test testacc ci \
 	devenv-up cluster cert-manager argocd kargo devenv-status devenv-down
