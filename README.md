@@ -3,7 +3,7 @@
 > [!WARNING]
 > This provider is still in active development and should be treated as prerelease software.
 >
-> Breaking changes are expected before a stable release. Resource schemas, import formats, behavior, and version compatibility may change between releases. Pin provider versions carefully, review changelogs before upgrading, and avoid using this provider for critical production workflows until a stable release is published.
+> Breaking changes are expected before a stable release. Resource schemas, import formats, behavior, and version compatibility may change between releases. Pin provider versions carefully and review changelogs before upgrading.
 
 The Kargo Terraform provider manages [Kargo](https://kargo.io/) continuous delivery resources through Terraform. It talks to the Kargo API using the Connect JSON protocol and is currently developed against Kargo `v1.9.5+`.
 
