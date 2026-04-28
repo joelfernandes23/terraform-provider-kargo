@@ -89,6 +89,9 @@ func TestProviderResources(t *testing.T) {
 	if resources == nil {
 		t.Error("expected non-nil resources slice")
 	}
+	if len(resources) != 2 {
+		t.Errorf("expected 2 resources, got %d", len(resources))
+	}
 }
 
 func TestProviderDataSources(t *testing.T) {

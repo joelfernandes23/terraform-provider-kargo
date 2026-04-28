@@ -1,0 +1,32 @@
+---
+page_title: "kargo_warehouse Resource - Kargo"
+subcategory: ""
+description: |-
+  Manages a Kargo warehouse. A warehouse subscribes to artifact sources and creates Freight.
+---
+
+# kargo_warehouse (Resource)
+
+Manages a Kargo Warehouse within a Kargo Project. Warehouses subscribe to artifact sources, such as container image repositories, Git repositories, and Helm chart repositories, then create Freight from newly discovered versions.
+
+Updating subscriptions changes the Warehouse in place. Changing `project` or `name` requires replacement because those fields identify the Kargo object.
+
+## Example Usage
+
+{{ tffile "examples/resources/kargo_warehouse/resource.tf" }}
+
+## Subscription Types
+
+Each `subscription` block must contain exactly one of `image`, `git`, or `chart`.
+
+Subscriptions are ordered. Keep the order stable when multiple artifact sources are part of the same Warehouse.
+
+## Import
+
+Import an existing Warehouse with `project/name`:
+
+```shell
+terraform import kargo_warehouse.example example-project/app
+```
+
+{{ .SchemaMarkdown | trimspace }}

@@ -87,6 +87,7 @@ func (p *KargoProvider) Configure(ctx context.Context, req provider.ConfigureReq
 func (p *KargoProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		NewProjectResource,
+		NewWarehouseResource,
 	}
 }
 

@@ -128,9 +128,12 @@ jobs:
           kubectl wait --for=condition=Available deployment/argocd-server -n argocd --timeout=300s
 
       - name: Install Kargo
+        env:
+          KARGO_VERSION: "1.9.5"
         run: |
           kubectl create namespace kargo
           helm install kargo oci://ghcr.io/akuity/kargo-charts/kargo \
+            --version "$KARGO_VERSION" \
             --namespace kargo \
             --values test/kargo-values.yaml \
             --wait --timeout 300s
