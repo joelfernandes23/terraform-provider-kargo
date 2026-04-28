@@ -97,6 +97,9 @@ func TestProviderDataSources(t *testing.T) {
 	if dataSources == nil {
 		t.Error("expected non-nil data sources slice")
 	}
+	if len(dataSources) != 1 {
+		t.Errorf("expected 1 data source, got %d", len(dataSources))
+	}
 }
 
 func TestNew(t *testing.T) {

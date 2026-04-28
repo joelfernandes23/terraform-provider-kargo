@@ -15,14 +15,16 @@ type ProjectMetadata struct {
 }
 
 type ProjectStatus struct {
+	Phase      string             `json:"phase,omitempty"`
 	Conditions []ProjectCondition `json:"conditions,omitempty"`
 }
 
 type ProjectCondition struct {
-	Type    string `json:"type"`
-	Status  string `json:"status"`
-	Reason  string `json:"reason,omitempty"`
-	Message string `json:"message,omitempty"`
+	Type               string `json:"type"`
+	Status             string `json:"status"`
+	Reason             string `json:"reason,omitempty"`
+	Message            string `json:"message,omitempty"`
+	LastTransitionTime string `json:"lastTransitionTime,omitempty"`
 }
 
 type Project struct {
