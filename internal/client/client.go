@@ -37,6 +37,10 @@ type KargoClient interface {
 	CreateProject(ctx context.Context, name string) (*Project, error)
 	GetProject(ctx context.Context, name string) (*Project, error)
 	DeleteProject(ctx context.Context, name string) error
+	CreateWarehouse(ctx context.Context, project, name string, spec WarehouseSpec) (*Warehouse, error)
+	GetWarehouse(ctx context.Context, project, name string) (*Warehouse, error)
+	UpdateWarehouse(ctx context.Context, project, name string, spec WarehouseSpec) (*Warehouse, error)
+	DeleteWarehouse(ctx context.Context, project, name string) error
 }
 
 var _ KargoClient = (*Client)(nil)

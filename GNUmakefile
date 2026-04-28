@@ -31,6 +31,7 @@ CLUSTER_NAME  := kargo-dev
 KIND_CONFIG   := test/kind-config.yaml
 KARGO_VALUES  := test/kargo-values.yaml
 KARGO_CHART   := oci://ghcr.io/akuity/kargo-charts/kargo
+KARGO_VERSION := 1.9.5
 
 devenv-up: cluster cert-manager argocd kargo devenv-status ## Full local env setup
 
@@ -55,6 +56,7 @@ argocd: ## Install ArgoCD (--server-side required: applicationsets CRD exceeds c
 kargo: ## Install Kargo via Helm (OCI registry)
 	kubectl create namespace kargo --dry-run=client -o yaml | kubectl apply -f -
 	helm upgrade --install kargo $(KARGO_CHART) \
+		--version $(KARGO_VERSION) \
 		--namespace kargo \
 		--values $(KARGO_VALUES) \
 		--wait --timeout 300s
