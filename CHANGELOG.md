@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/joelfernandes23/terraform-provider-kargo/compare/v0.2.0...v0.3.0) (2026-04-28)
+
+
+### Features
+
+* add project data source ([#10](https://github.com/joelfernandes23/terraform-provider-kargo/issues/10)) ([1968dc2](https://github.com/joelfernandes23/terraform-provider-kargo/commit/1968dc2958d2ba2056b1d4d6942c77c6046c4f47))
+
 ## [0.2.0](https://github.com/joelfernandes23/terraform-provider-kargo/compare/v0.1.1...v0.2.0) (2026-04-18)
 
 
