@@ -105,8 +105,8 @@ func (r *WarehouseResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 							Description: "Container image repository subscription.",
 							Attributes: map[string]schema.Attribute{
 								"repo_url": schema.StringAttribute{
-									Required:    true,
-									Description: "The image repository URL without a tag.",
+									Optional:    true,
+									Description: "The image repository URL without a tag. Required when image is set.",
 								},
 								"semver_constraint": schema.StringAttribute{
 									Optional:    true,
@@ -129,8 +129,8 @@ func (r *WarehouseResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 							Description: "Git repository subscription.",
 							Attributes: map[string]schema.Attribute{
 								"repo_url": schema.StringAttribute{
-									Required:    true,
-									Description: "The Git repository URL.",
+									Optional:    true,
+									Description: "The Git repository URL. Required when git is set.",
 								},
 								"branch": schema.StringAttribute{
 									Optional:    true,
@@ -146,8 +146,8 @@ func (r *WarehouseResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 							Description: "Helm chart repository subscription.",
 							Attributes: map[string]schema.Attribute{
 								"repo_url": schema.StringAttribute{
-									Required:    true,
-									Description: "The Helm chart repository URL.",
+									Optional:    true,
+									Description: "The Helm chart repository URL. Required when chart is set.",
 								},
 								"name": schema.StringAttribute{
 									Optional:    true,
@@ -340,16 +340,24 @@ func expandWarehouseSpec(subs []WarehouseSubscriptionModel) (client.WarehouseSpe
 
 		expanded := client.WarehouseSubscription{}
 		if sub.Image != nil {
+			repoURL, err := requiredWarehouseString(sub.Image.RepoURL, i, "image.repo_url")
+			if err != nil {
+				return client.WarehouseSpec{}, err
+			}
 			expanded.Image = &client.ImageSubscription{
-				RepoURL:                sub.Image.RepoURL.ValueString(),
+				RepoURL:                repoURL,
 				Constraint:             valueString(sub.Image.SemverConstraint),
 				ImageSelectionStrategy: valueString(sub.Image.TagSelectionStrategy),
 				Platform:               valueString(sub.Image.Platform),
 			}
 		}
 		if sub.Git != nil {
+			repoURL, err := requiredWarehouseString(sub.Git.RepoURL, i, "git.repo_url")
+			if err != nil {
+				return client.WarehouseSpec{}, err
+			}
 			git := &client.GitSubscription{
-				RepoURL:          sub.Git.RepoURL.ValueString(),
+				RepoURL:          repoURL,
 				Branch:           valueString(sub.Git.Branch),
 				SemverConstraint: valueString(sub.Git.SemverConstraint),
 			}
@@ -359,8 +367,12 @@ func expandWarehouseSpec(subs []WarehouseSubscriptionModel) (client.WarehouseSpe
 			expanded.Git = git
 		}
 		if sub.Chart != nil {
+			repoURL, err := requiredWarehouseString(sub.Chart.RepoURL, i, "chart.repo_url")
+			if err != nil {
+				return client.WarehouseSpec{}, err
+			}
 			expanded.Chart = &client.ChartSubscription{
-				RepoURL:          sub.Chart.RepoURL.ValueString(),
+				RepoURL:          repoURL,
 				Name:             valueString(sub.Chart.Name),
 				SemverConstraint: valueString(sub.Chart.SemverConstraint),
 			}
@@ -369,6 +381,13 @@ func expandWarehouseSpec(subs []WarehouseSubscriptionModel) (client.WarehouseSpe
 	}
 
 	return spec, nil
+}
+
+func requiredWarehouseString(value types.String, index int, field string) (string, error) {
+	if value.IsNull() || value.IsUnknown() || value.ValueString() == "" {
+		return "", fmt.Errorf("subscription %d %s must be set", index, field)
+	}
+	return value.ValueString(), nil
 }
 
 func flattenWarehouse(project string, warehouse *client.Warehouse, prior *WarehouseResourceModel) WarehouseResourceModel {

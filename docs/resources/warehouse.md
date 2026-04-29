@@ -93,38 +93,29 @@ Optional:
 <a id="nestedblock--subscription--chart"></a>
 ### Nested Schema for `subscription.chart`
 
-Required:
-
-- `repo_url` (String) The Helm chart repository URL.
-
 Optional:
 
 - `name` (String) The chart name for classic chart repositories.
+- `repo_url` (String) The Helm chart repository URL. Required when chart is set.
 - `semver_constraint` (String) SemVer constraint for acceptable chart versions.
 
 
 <a id="nestedblock--subscription--git"></a>
 ### Nested Schema for `subscription.git`
 
-Required:
-
-- `repo_url` (String) The Git repository URL.
-
 Optional:
 
 - `branch` (String) Branch to watch.
+- `repo_url` (String) The Git repository URL. Required when git is set.
 - `semver_constraint` (String) SemVer constraint for acceptable Git tags.
 
 
 <a id="nestedblock--subscription--image"></a>
 ### Nested Schema for `subscription.image`
 
-Required:
-
-- `repo_url` (String) The image repository URL without a tag.
-
 Optional:
 
 - `platform` (String) Target image platform, such as linux/amd64.
+- `repo_url` (String) The image repository URL without a tag. Required when image is set.
 - `semver_constraint` (String) SemVer constraint for acceptable image tags.
 - `tag_selection_strategy` (String) Image tag selection strategy.
