@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/joelfernandes23/terraform-provider-kargo/compare/v0.3.1...v0.3.2) (2026-04-29)
+
+
+### Bug Fixes
+
+* validate warehouse subscription repo urls ([#15](https://github.com/joelfernandes23/terraform-provider-kargo/issues/15)) ([2eec433](https://github.com/joelfernandes23/terraform-provider-kargo/commit/2eec433ac0705f06296b23fede97a71e66356a56))
+
 ## [0.3.1](https://github.com/joelfernandes23/terraform-provider-kargo/compare/v0.3.0...v0.3.1) (2026-04-28)
 
 
