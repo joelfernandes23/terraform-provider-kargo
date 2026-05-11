@@ -158,6 +158,104 @@ func TestGetWarehouseDecodesExtendedStatusFixture(t *testing.T) {
 	assertEqual(t, "freight-current", w.Status.LastFreightID)
 }
 
+func TestWarehouseProtobufInt64Decoding(t *testing.T) {
+	tests := []struct {
+		name      string
+		raw       string
+		wantValue int64
+		wantSet   bool
+		wantErr   bool
+	}{
+		{name: "quoted", raw: `"42"`, wantValue: 42, wantSet: true},
+		{name: "number", raw: `42`, wantValue: 42, wantSet: true},
+		{name: "null", raw: `null`},
+		{name: "empty object", raw: `{}`},
+		{name: "empty string", raw: `""`},
+		{name: "invalid quoted", raw: `"forty-two"`, wantSet: true, wantErr: true},
+		{name: "invalid token", raw: `true`, wantSet: true, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var value ProtobufInt64
+			err := json.Unmarshal([]byte(tt.raw), &value)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			assertNoError(t, err)
+			if value.Set() != tt.wantSet {
+				t.Fatalf("expected set=%t, got %t", tt.wantSet, value.Set())
+			}
+			if value.Value() != tt.wantValue {
+				t.Fatalf("expected value %d, got %d", tt.wantValue, value.Value())
+			}
+		})
+	}
+}
+
+func TestKargoTimeDecoding(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		want    string
+		wantErr bool
+	}{
+		{name: "string", raw: `"2024-05-01T00:00:00Z"`, want: "2024-05-01T00:00:00Z"},
+		{name: "null", raw: `null`},
+		{name: "object", raw: `{"seconds":"1714521600","nanos":500000000}`, want: "2024-05-01T00:00:00.5Z"},
+		{name: "object without seconds", raw: `{}`},
+		{name: "invalid object", raw: `{"seconds":"soon"}`, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var value KargoTime
+			err := json.Unmarshal([]byte(tt.raw), &value)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			assertNoError(t, err)
+			assertEqual(t, tt.want, value.String())
+		})
+	}
+}
+
+func TestKargoDurationDecoding(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		want    string
+		wantErr bool
+	}{
+		{name: "string", raw: `"1h0m0s"`, want: "1h0m0s"},
+		{name: "null", raw: `null`},
+		{name: "object", raw: `{"duration":"3600000000000"}`, want: "1h0m0s"},
+		{name: "object without duration", raw: `{}`},
+		{name: "invalid object", raw: `{"duration":"later"}`, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var value KargoDuration
+			err := json.Unmarshal([]byte(tt.raw), &value)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			assertNoError(t, err)
+			assertEqual(t, tt.want, value.String())
+		})
+	}
+}
+
 func TestListWarehouseFreight(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		fixture, err := os.ReadFile("testdata/query_freight_response.json")

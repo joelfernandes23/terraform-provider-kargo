@@ -1,5 +1,7 @@
 # Terraform Provider for Kargo
 
+[![codecov](https://codecov.io/gh/joelfernandes23/terraform-provider-kargo/branch/main/graph/badge.svg)](https://codecov.io/gh/joelfernandes23/terraform-provider-kargo)
+
 > [!WARNING]
 > This provider is still in active development and should be treated as prerelease software.
 >

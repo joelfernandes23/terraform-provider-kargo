@@ -404,6 +404,154 @@ func TestFlattenWarehouseDataSourceFreightFiltersToLastFreightID(t *testing.T) {
 	if got := flattenWarehouseDataSourceFreight("", freight); len(got) != 0 {
 		t.Fatalf("expected no freight when last_freight_id is empty, got %d", len(got))
 	}
+	if got := flattenWarehouseDataSourceFreight("freight-missing", freight); len(got) != 0 {
+		t.Fatalf("expected no freight when last_freight_id is missing, got %d", len(got))
+	}
+}
+
+func TestFlattenWarehouseDataSource(t *testing.T) {
+	var status client.WarehouseStatus
+	assertNoError(t, json.Unmarshal([]byte(`{
+		"conditions": [
+			{"type":"Reconciling","status":"False"},
+			{"type":"Ready","status":"True","reason":"WarehouseReady","message":"ready","lastTransitionTime":"2024-05-01T00:00:00Z"}
+		],
+		"lastHandledRefresh": "refresh-1",
+		"observedGeneration": "42",
+		"lastFreightID": "freight-current"
+	}`), &status))
+
+	warehouse := &client.Warehouse{
+		Metadata: client.WarehouseMetadata{Name: "app"},
+		Spec: client.WarehouseSpec{
+			Subscriptions: []client.WarehouseSubscription{
+				{
+					Image: &client.ImageSubscription{
+						RepoURL:                "ghcr.io/example/app",
+						Constraint:             "^1.0.0",
+						ImageSelectionStrategy: "SemVer",
+						Platform:               "linux/amd64",
+					},
+				},
+				{
+					Git: &client.GitSubscription{
+						RepoURL:          "https://github.com/example/app.git",
+						Branch:           "main",
+						SemverConstraint: "^1.0.0",
+					},
+				},
+				{
+					Chart: &client.ChartSubscription{
+						RepoURL:          "oci://ghcr.io/example/charts",
+						Name:             "app",
+						SemverConstraint: "^1.0.0",
+					},
+				},
+			},
+		},
+		Status: status,
+	}
+	freight := []client.Freight{
+		{Metadata: client.FreightMetadata{Name: "freight-old"}},
+		{
+			Metadata: client.FreightMetadata{Name: "freight-current"},
+			Alias:    "current-build",
+			Origin:   &client.FreightOrigin{Kind: "Warehouse", Name: "app"},
+			Commits: []client.GitCommit{{
+				RepoURL:   "https://github.com/example/app.git",
+				ID:        "abc123",
+				Branch:    "main",
+				Tag:       "v1.2.3",
+				Message:   "Release v1.2.3",
+				Author:    "Ada Example",
+				Committer: "CI Example",
+			}},
+			Images: []client.Image{{
+				RepoURL: "ghcr.io/example/app",
+				Tag:     "1.2.3",
+				Digest:  "sha256:123",
+			}},
+			Charts: []client.Chart{{
+				RepoURL: "oci://ghcr.io/example/charts",
+				Name:    "app",
+				Version: "1.2.3",
+			}},
+			Artifacts: []client.ArtifactReference{{
+				ArtifactType:     "application/example",
+				SubscriptionName: "bundle",
+				Version:          "v1.2.3",
+			}},
+			Status: client.FreightStatus{
+				CurrentlyIn: map[string]client.CurrentStage{
+					"test": {Since: client.KargoTime("2024-05-01T00:00:00Z")},
+					"prod": {Since: client.KargoTime("2024-05-02T00:00:00Z")},
+				},
+				VerifiedIn: map[string]client.VerifiedStage{
+					"test": {VerifiedAt: client.KargoTime("2024-05-01T01:00:00Z"), LongestSoak: client.KargoDuration("1h0m0s")},
+				},
+				ApprovedFor: map[string]client.ApprovedStage{
+					"prod": {ApprovedAt: client.KargoTime("2024-05-01T02:00:00Z")},
+				},
+			},
+		},
+	}
+
+	model := flattenWarehouseDataSource("demo", warehouse, freight)
+	assertEqual(t, "demo", model.Project.ValueString())
+	assertEqual(t, "app", model.Name.ValueString())
+	assertEqual(t, "demo/app", model.ID.ValueString())
+
+	if len(model.Subscription) != 3 {
+		t.Fatalf("expected 3 subscriptions, got %d", len(model.Subscription))
+	}
+	assertEqual(t, "ghcr.io/example/app", model.Subscription[0].Image.RepoURL.ValueString())
+	assertEqual(t, "SemVer", model.Subscription[0].Image.TagSelectionStrategy.ValueString())
+	assertEqual(t, "https://github.com/example/app.git", model.Subscription[1].Git.RepoURL.ValueString())
+	assertEqual(t, "oci://ghcr.io/example/charts", model.Subscription[2].Chart.RepoURL.ValueString())
+
+	if model.Status == nil {
+		t.Fatal("expected status")
+	}
+	assertEqual(t, "refresh-1", model.Status.LastHandledRefresh.ValueString())
+	if model.Status.ObservedGeneration.ValueInt64() != 42 {
+		t.Fatalf("expected observed generation 42, got %d", model.Status.ObservedGeneration.ValueInt64())
+	}
+	assertEqual(t, "freight-current", model.Status.LastFreightID.ValueString())
+	assertEqual(t, "Ready", model.Status.Conditions[0].Type.ValueString())
+	assertEqual(t, "Reconciling", model.Status.Conditions[1].Type.ValueString())
+	if !model.Status.Conditions[1].Reason.IsNull() {
+		t.Fatalf("expected empty condition reason to flatten to null, got %q", model.Status.Conditions[1].Reason.ValueString())
+	}
+
+	if len(model.Freight) != 1 {
+		t.Fatalf("expected one freight item, got %d", len(model.Freight))
+	}
+	current := model.Freight[0]
+	assertEqual(t, "freight-current", current.Name.ValueString())
+	assertEqual(t, "current-build", current.Alias.ValueString())
+	assertEqual(t, "Warehouse", current.OriginKind.ValueString())
+	assertEqual(t, "app", current.OriginName.ValueString())
+	assertEqual(t, "abc123", current.Commits[0].ID.ValueString())
+	assertEqual(t, "ghcr.io/example/app", current.Images[0].RepoURL.ValueString())
+	assertEqual(t, "1.2.3", current.Charts[0].Version.ValueString())
+	assertEqual(t, "v1.2.3", current.Artifacts[0].Version.ValueString())
+	assertEqual(t, "prod", current.CurrentlyIn[0].Stage.ValueString())
+	assertEqual(t, "test", current.CurrentlyIn[1].Stage.ValueString())
+	assertEqual(t, "1h0m0s", current.VerifiedIn[0].LongestSoak.ValueString())
+	assertEqual(t, "2024-05-01T02:00:00Z", current.ApprovedFor[0].ApprovedAt.ValueString())
+}
+
+func TestFlattenWarehouseDataSourceUsesNamespaceWhenPresent(t *testing.T) {
+	warehouse := &client.Warehouse{
+		Metadata: client.WarehouseMetadata{Name: "app", Namespace: "real-project"},
+	}
+
+	model := flattenWarehouseDataSource("fallback", warehouse, nil)
+	assertEqual(t, "real-project", model.Project.ValueString())
+	assertEqual(t, "real-project/app", model.ID.ValueString())
+	if !model.Status.ObservedGeneration.IsNull() {
+		t.Fatalf("expected unset observed generation to flatten to null, got %d", model.Status.ObservedGeneration.ValueInt64())
+	}
 }
 
 func testWarehouseDataSourceConfig(url string) string {
@@ -418,4 +566,11 @@ data "kargo_warehouse" "test" {
   name    = "app"
 }
 `, url)
+}
+
+func assertEqual(t *testing.T, expected, actual string) {
+	t.Helper()
+	if expected != actual {
+		t.Fatalf("expected %q, got %q", expected, actual)
+	}
 }
