@@ -39,6 +39,7 @@ type KargoClient interface {
 	DeleteProject(ctx context.Context, name string) error
 	CreateWarehouse(ctx context.Context, project, name string, spec WarehouseSpec) (*Warehouse, error)
 	GetWarehouse(ctx context.Context, project, name string) (*Warehouse, error)
+	ListWarehouseFreight(ctx context.Context, project, warehouse string) ([]Freight, error)
 	UpdateWarehouse(ctx context.Context, project, name string, spec WarehouseSpec) (*Warehouse, error)
 	DeleteWarehouse(ctx context.Context, project, name string) error
 }

@@ -6,7 +6,7 @@ description: |-
 
 # Kargo Provider
 
-The Kargo provider manages [Kargo](https://docs.kargo.io/) continuous delivery resources through Terraform. It talks to the Kargo API using the Connect JSON protocol and currently supports Projects, Warehouses, and read-only Project lookups.
+This provider lets Terraform manage [Kargo](https://docs.kargo.io/) Projects and Warehouses. It also includes data sources for reading existing Projects and Warehouses.
 
 ## Authentication
 
