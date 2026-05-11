@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"os"
 	"testing"
 )
 
@@ -132,6 +133,98 @@ func TestGetWarehouse(t *testing.T) {
 		if !IsNotFound(err) {
 			t.Errorf("expected IsNotFound to recognize wrapped error: %v", err)
 		}
+	})
+}
+
+func TestGetWarehouseDecodesExtendedStatusFixture(t *testing.T) {
+	fixture, err := os.ReadFile("testdata/warehouse_response.json")
+	assertNoError(t, err)
+
+	c, srv := testClientWithServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(fixture)
+	})
+	defer srv.Close()
+
+	w, err := c.GetWarehouse(context.Background(), "demo", "app")
+	assertNoError(t, err)
+	assertEqual(t, "refresh-1", w.Status.LastHandledRefresh)
+	if !w.Status.ObservedGeneration.Set() {
+		t.Fatal("expected observedGeneration to be set")
+	}
+	if w.Status.ObservedGeneration.Value() != 42 {
+		t.Fatalf("expected observedGeneration 42, got %d", w.Status.ObservedGeneration.Value())
+	}
+	assertEqual(t, "freight-current", w.Status.LastFreightID)
+}
+
+func TestListWarehouseFreight(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		fixture, err := os.ReadFile("testdata/query_freight_response.json")
+		assertNoError(t, err)
+
+		c, srv := testClientWithServer(t, func(w http.ResponseWriter, r *http.Request) {
+			assertSuffix(t, r.URL.Path, "/QueryFreight")
+
+			var body struct {
+				Project string   `json:"project"`
+				Origins []string `json:"origins"`
+			}
+			assertNoError(t, json.NewDecoder(r.Body).Decode(&body))
+			assertEqual(t, "demo", body.Project)
+			if len(body.Origins) != 1 || body.Origins[0] != "app" {
+				t.Fatalf("expected origins [app], got %#v", body.Origins)
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(fixture)
+		})
+		defer srv.Close()
+
+		freight, err := c.ListWarehouseFreight(context.Background(), "demo", "app")
+		assertNoError(t, err)
+		if len(freight) != 2 {
+			t.Fatalf("expected 2 freight items, got %d", len(freight))
+		}
+
+		current := freight[1]
+		assertEqual(t, "freight-current", current.Metadata.Name)
+		assertEqual(t, "current-build", current.Alias)
+		assertEqual(t, "Warehouse", current.Origin.Kind)
+		assertEqual(t, "app", current.Origin.Name)
+		assertEqual(t, "abc123", current.Commits[0].ID)
+		assertEqual(t, "ghcr.io/example/app", current.Images[0].RepoURL)
+		assertEqual(t, "sha256:123", current.Images[0].Digest)
+		assertEqual(t, "1.2.3", current.Charts[0].Version)
+		assertEqual(t, "v1.2.3", current.Artifacts[0].Version)
+		assertEqual(t, "2024-05-01T00:00:00Z", current.Status.CurrentlyIn["test"].Since.String())
+		assertEqual(t, "1h0m0s", current.Status.VerifiedIn["test"].LongestSoak.String())
+		assertEqual(t, "2024-05-01T02:00:00Z", current.Status.ApprovedFor["prod"].ApprovedAt.String())
+	})
+
+	t.Run("missing empty group returns empty list", func(t *testing.T) {
+		c, srv := testClientWithServer(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"groups":{}}`))
+		})
+		defer srv.Close()
+
+		freight, err := c.ListWarehouseFreight(context.Background(), "demo", "app")
+		assertNoError(t, err)
+		if len(freight) != 0 {
+			t.Fatalf("expected no freight, got %d", len(freight))
+		}
+	})
+
+	t.Run("API error", func(t *testing.T) {
+		c, srv := testClientWithServer(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"code":"internal","message":"boom"}`))
+		})
+		defer srv.Close()
+
+		_, err := c.ListWarehouseFreight(context.Background(), "demo", "app")
+		assertErrorContains(t, err, "listing freight for warehouse")
 	})
 }
 

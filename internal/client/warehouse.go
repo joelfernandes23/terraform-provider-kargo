@@ -5,6 +5,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
+	"time"
 )
 
 type WarehouseMetadata struct {
@@ -17,7 +20,11 @@ type WarehouseMetadata struct {
 }
 
 type WarehouseStatus struct {
-	Conditions []WarehouseCondition `json:"conditions,omitempty"`
+	Conditions          []WarehouseCondition `json:"conditions,omitempty"`
+	LastHandledRefresh  string               `json:"lastHandledRefresh,omitempty"`
+	ObservedGeneration  ProtobufInt64        `json:"observedGeneration,omitempty"`
+	LastFreightID       string               `json:"lastFreightID,omitempty"`
+	DiscoveredArtifacts json.RawMessage      `json:"discoveredArtifacts,omitempty"`
 }
 
 type WarehouseCondition struct {
@@ -64,8 +71,186 @@ type ChartSubscription struct {
 	SemverConstraint string `json:"semverConstraint,omitempty"`
 }
 
+type ProtobufInt64 struct {
+	value int64
+	set   bool
+}
+
+func (i *ProtobufInt64) UnmarshalJSON(data []byte) error {
+	value, set, err := parseJSONInt64(data)
+	if err != nil {
+		return err
+	}
+	i.value = value
+	i.set = set
+	return nil
+}
+
+func (i ProtobufInt64) Value() int64 {
+	return i.value
+}
+
+func (i ProtobufInt64) Set() bool {
+	return i.set
+}
+
+type KargoTime string
+
+func (t *KargoTime) UnmarshalJSON(data []byte) error {
+	raw := strings.TrimSpace(string(data))
+	if raw == "" || raw == "null" {
+		*t = ""
+		return nil
+	}
+	if strings.HasPrefix(raw, `"`) {
+		var value string
+		if err := json.Unmarshal(data, &value); err != nil {
+			return err
+		}
+		*t = KargoTime(value)
+		return nil
+	}
+
+	var value struct {
+		Seconds json.RawMessage `json:"seconds"`
+		Nanos   int64           `json:"nanos"`
+	}
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	seconds, set, err := parseJSONInt64(value.Seconds)
+	if err != nil {
+		return err
+	}
+	if !set {
+		*t = ""
+		return nil
+	}
+	*t = KargoTime(time.Unix(seconds, value.Nanos).UTC().Format(time.RFC3339Nano))
+	return nil
+}
+
+func (t KargoTime) String() string {
+	return string(t)
+}
+
+type KargoDuration string
+
+func (d *KargoDuration) UnmarshalJSON(data []byte) error {
+	raw := strings.TrimSpace(string(data))
+	if raw == "" || raw == "null" {
+		*d = ""
+		return nil
+	}
+	if strings.HasPrefix(raw, `"`) {
+		var value string
+		if err := json.Unmarshal(data, &value); err != nil {
+			return err
+		}
+		*d = KargoDuration(value)
+		return nil
+	}
+
+	var value struct {
+		Duration json.RawMessage `json:"duration"`
+	}
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	nanos, set, err := parseJSONInt64(value.Duration)
+	if err != nil {
+		return err
+	}
+	if !set {
+		*d = ""
+		return nil
+	}
+	*d = KargoDuration(time.Duration(nanos).String())
+	return nil
+}
+
+func (d KargoDuration) String() string {
+	return string(d)
+}
+
+type FreightMetadata struct {
+	Name      string `json:"name"`
+	Namespace string `json:"namespace,omitempty"`
+}
+
+type Freight struct {
+	Metadata  FreightMetadata     `json:"metadata"`
+	Alias     string              `json:"alias,omitempty"`
+	Origin    *FreightOrigin      `json:"origin,omitempty"`
+	Commits   []GitCommit         `json:"commits,omitempty"`
+	Images    []Image             `json:"images,omitempty"`
+	Charts    []Chart             `json:"charts,omitempty"`
+	Artifacts []ArtifactReference `json:"artifacts,omitempty"`
+	Status    FreightStatus       `json:"status,omitempty"`
+}
+
+type FreightOrigin struct {
+	Kind string `json:"kind"`
+	Name string `json:"name"`
+}
+
+type GitCommit struct {
+	RepoURL   string `json:"repoURL"`
+	ID        string `json:"id"`
+	Branch    string `json:"branch,omitempty"`
+	Tag       string `json:"tag,omitempty"`
+	Message   string `json:"message,omitempty"`
+	Author    string `json:"author,omitempty"`
+	Committer string `json:"committer,omitempty"`
+}
+
+type Image struct {
+	RepoURL string `json:"repoURL"`
+	Tag     string `json:"tag,omitempty"`
+	Digest  string `json:"digest,omitempty"`
+}
+
+type Chart struct {
+	RepoURL string `json:"repoURL"`
+	Name    string `json:"name,omitempty"`
+	Version string `json:"version,omitempty"`
+}
+
+type ArtifactReference struct {
+	ArtifactType     string `json:"artifactType"`
+	SubscriptionName string `json:"subscriptionName"`
+	Version          string `json:"version"`
+}
+
+type FreightStatus struct {
+	CurrentlyIn map[string]CurrentStage  `json:"currentlyIn,omitempty"`
+	VerifiedIn  map[string]VerifiedStage `json:"verifiedIn,omitempty"`
+	ApprovedFor map[string]ApprovedStage `json:"approvedFor,omitempty"`
+}
+
+type CurrentStage struct {
+	Since KargoTime `json:"since,omitempty"`
+}
+
+type VerifiedStage struct {
+	VerifiedAt  KargoTime     `json:"verifiedAt,omitempty"`
+	LongestSoak KargoDuration `json:"longestSoak,omitempty"`
+}
+
+type ApprovedStage struct {
+	ApprovedAt KargoTime `json:"approvedAt,omitempty"`
+}
+
 type getWarehouseResponse struct {
 	Warehouse Warehouse `json:"warehouse"`
+}
+
+type queryFreightResponse struct {
+	Groups map[string]freightList `json:"groups"`
+}
+
+type freightList struct {
+	Freight []Freight `json:"freight"`
 }
 
 type resourceResultResponse struct {
@@ -138,6 +323,23 @@ func (c *Client) GetWarehouse(ctx context.Context, project, name string) (*Wareh
 	return &resp.Warehouse, nil
 }
 
+func (c *Client) ListWarehouseFreight(ctx context.Context, project, warehouse string) ([]Freight, error) {
+	var resp queryFreightResponse
+	req := map[string]any{
+		"project": project,
+		"origins": []string{warehouse},
+	}
+	if err := c.Do(ctx, "QueryFreight", req, &resp); err != nil {
+		return nil, fmt.Errorf("listing freight for warehouse %q/%q: %w", project, warehouse, err)
+	}
+
+	group, ok := resp.Groups[""]
+	if !ok {
+		return []Freight{}, nil
+	}
+	return group.Freight, nil
+}
+
 func (c *Client) UpdateWarehouse(ctx context.Context, project, name string, spec WarehouseSpec) (*Warehouse, error) {
 	manifest, err := marshalWarehouseManifest(project, name, spec)
 	if err != nil {
@@ -162,4 +364,24 @@ func (c *Client) DeleteWarehouse(ctx context.Context, project, name string) erro
 		return fmt.Errorf("deleting warehouse %q/%q: %w", project, name, err)
 	}
 	return nil
+}
+
+func parseJSONInt64(data []byte) (value int64, set bool, err error) {
+	raw := strings.TrimSpace(string(data))
+	if raw == "" || raw == "null" || raw == "{}" {
+		return 0, false, nil
+	}
+	if strings.HasPrefix(raw, `"`) {
+		var value string
+		if err := json.Unmarshal(data, &value); err != nil {
+			return 0, false, err
+		}
+		if value == "" {
+			return 0, false, nil
+		}
+		parsed, err := strconv.ParseInt(value, 10, 64)
+		return parsed, true, err
+	}
+	parsed, err := strconv.ParseInt(raw, 10, 64)
+	return parsed, true, err
 }

@@ -1,0 +1,122 @@
+{
+  "groups": {
+    "": {
+      "freight": [
+        {
+          "metadata": {
+            "name": "freight-old",
+            "namespace": "demo"
+          },
+          "alias": "previous-build",
+          "origin": {
+            "kind": "Warehouse",
+            "name": "app"
+          },
+          "commits": [
+            {
+              "repoURL": "https://github.com/example/app.git",
+              "id": "old123",
+              "branch": "main"
+            }
+          ],
+          "images": [
+            {
+              "repoURL": "ghcr.io/example/app",
+              "tag": "1.2.2",
+              "digest": "sha256:old"
+            }
+          ],
+          "charts": [],
+          "artifacts": [],
+          "status": {}
+        },
+        {
+          "metadata": {
+            "name": "freight-current",
+            "namespace": "demo"
+          },
+          "alias": "current-build",
+          "origin": {
+            "kind": "Warehouse",
+            "name": "app"
+          },
+          "commits": [
+            {
+              "repoURL": "https://github.com/example/app.git",
+              "id": "abc123",
+              "branch": "main",
+              "tag": "v1.2.3",
+              "message": "Release v1.2.3",
+              "author": "Ada Example",
+              "committer": "CI Example"
+            }
+          ],
+          "images": [
+            {
+              "repoURL": "ghcr.io/example/app",
+              "tag": "1.2.3",
+              "digest": "sha256:123",
+              "annotations": {
+                "example.com/internal-build": "ignored"
+              }
+            }
+          ],
+          "charts": [
+            {
+              "repoURL": "https://charts.example.com",
+              "name": "app",
+              "version": "1.2.3"
+            }
+          ],
+          "artifacts": [
+            {
+              "artifactType": "application/example",
+              "subscriptionName": "bundle",
+              "version": "v1.2.3",
+              "metadata": {
+                "internal": "ignored"
+              }
+            }
+          ],
+          "status": {
+            "currentlyIn": {
+              "test": {
+                "since": {
+                  "seconds": "1714521600",
+                  "nanos": 0
+                }
+              },
+              "prod": {
+                "since": "2024-05-02T00:00:00Z"
+              }
+            },
+            "verifiedIn": {
+              "test": {
+                "verifiedAt": {
+                  "seconds": "1714525200",
+                  "nanos": 0
+                },
+                "longestSoak": {
+                  "duration": "3600000000000"
+                }
+              }
+            },
+            "approvedFor": {
+              "prod": {
+                "approvedAt": {
+                  "seconds": "1714528800",
+                  "nanos": 0
+                }
+              }
+            },
+            "metadata": {
+              "internal": {
+                "raw": "ignored"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

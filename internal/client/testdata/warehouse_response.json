@@ -1,0 +1,37 @@
+{
+  "warehouse": {
+    "metadata": {
+      "name": "app",
+      "namespace": "demo",
+      "uid": "uid-app",
+      "resourceVersion": "10"
+    },
+    "spec": {
+      "subscriptions": []
+    },
+    "status": {
+      "conditions": [
+        {
+          "type": "Reconciling",
+          "status": "False",
+          "reason": "Idle",
+          "message": "warehouse is idle",
+          "lastTransitionTime": "2024-05-01T00:00:00Z"
+        },
+        {
+          "type": "Ready",
+          "status": "True",
+          "reason": "WarehouseReady",
+          "message": "warehouse is ready",
+          "lastTransitionTime": "2024-05-01T00:01:00Z"
+        }
+      ],
+      "lastHandledRefresh": "refresh-1",
+      "observedGeneration": "42",
+      "lastFreightID": "freight-current",
+      "discoveredArtifacts": {
+        "discoveredAt": "2024-05-01T00:00:00Z"
+      }
+    }
+  }
+}

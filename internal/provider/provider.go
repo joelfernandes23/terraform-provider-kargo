@@ -94,6 +94,7 @@ func (p *KargoProvider) Resources(_ context.Context) []func() resource.Resource 
 func (p *KargoProvider) DataSources(_ context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
 		NewProjectDataSource,
+		NewWarehouseDataSource,
 	}
 }
 
