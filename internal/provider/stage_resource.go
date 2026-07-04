@@ -207,3 +207,15 @@ func (r *StageResource) Delete(_ context.Context, _ resource.DeleteRequest, resp
 func (r *StageResource) ImportState(_ context.Context, _ resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resp.Diagnostics.AddError("Not implemented", "kargo_stage import is not implemented yet.")
 }
+
+func parseStageID(id string) (project, name string, err error) {
+	return id, "", fmt.Errorf("parseStageID not implemented")
+}
+
+func expandStageSpec(_ context.Context, data *StageResourceModel) (client.StageSpec, error) {
+	return client.StageSpec{Shard: valueString(data.Shard)}, fmt.Errorf("expandStageSpec not implemented for stage %q", valueString(data.Name))
+}
+
+func flattenStage(_ context.Context, project string, _ *client.Stage, _ *StageResourceModel) StageResourceModel {
+	return StageResourceModel{Project: types.StringValue(project)}
+}

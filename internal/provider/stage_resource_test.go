@@ -2,9 +2,15 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
+	"reflect"
+	"strings"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
 	fwresource "github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/joelfernandes23/terraform-provider-kargo/internal/client"
 )
 
 func TestStageResourceMetadata(t *testing.T) {
@@ -104,5 +110,343 @@ func TestNewStageResource(t *testing.T) {
 	}
 	if _, ok := r.(*StageResource); !ok {
 		t.Error("expected *StageResource")
+	}
+}
+
+func testStageStringList(t *testing.T, values ...string) types.List {
+	t.Helper()
+	if values == nil {
+		values = []string{}
+	}
+	list, diags := types.ListValueFrom(context.Background(), types.StringType, values)
+	if diags.HasError() {
+		t.Fatalf("building string list: %s", diags)
+	}
+	return list
+}
+
+func TestParseStageID(t *testing.T) {
+	project, name, err := parseStageID("demo/staging")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if project != "demo" || name != "staging" {
+		t.Fatalf("expected demo/staging, got %s/%s", project, name)
+	}
+
+	for _, id := range []string{"demo", "/x", "x/", "a/b/c"} {
+		t.Run(id, func(t *testing.T) {
+			_, _, err := parseStageID(id)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+		})
+	}
+}
+
+func TestExpandStageSpecDefaultsOriginKind(t *testing.T) {
+	spec, err := expandStageSpec(context.Background(), &StageResourceModel{
+		RequestedFreight: []StageRequestedFreightModel{{
+			Origin:  &StageFreightOriginModel{Kind: types.StringNull(), Name: types.StringValue("app")},
+			Sources: &StageFreightSourcesModel{Direct: types.BoolValue(true), Stages: types.ListNull(types.StringType)},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := spec.RequestedFreight[0].Origin.Kind; got != "Warehouse" {
+		t.Errorf("expected origin kind %q, got %q", "Warehouse", got)
+	}
+}
+
+func TestExpandStageSpecRequiresOriginName(t *testing.T) {
+	for name, origin := range map[string]*StageFreightOriginModel{
+		"nil_origin": nil,
+		"null_name":  {Kind: types.StringNull(), Name: types.StringNull()},
+		"empty_name": {Kind: types.StringNull(), Name: types.StringValue("")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := expandStageSpec(context.Background(), &StageResourceModel{
+				RequestedFreight: []StageRequestedFreightModel{{
+					Origin:  origin,
+					Sources: &StageFreightSourcesModel{Direct: types.BoolValue(true)},
+				}},
+			})
+			if err == nil || !strings.Contains(err.Error(), "requested_freight 0 origin.name must be set") {
+				t.Fatalf("expected origin.name error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestExpandStageSpecRequiresSources(t *testing.T) {
+	for name, sources := range map[string]*StageFreightSourcesModel{
+		"nil_sources":  nil,
+		"direct_false": {Direct: types.BoolValue(false), Stages: types.ListNull(types.StringType)},
+		"direct_null":  {Direct: types.BoolNull(), Stages: types.ListNull(types.StringType)},
+		"empty_stages": {Direct: types.BoolNull(), Stages: testStageStringList(t)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := expandStageSpec(context.Background(), &StageResourceModel{
+				RequestedFreight: []StageRequestedFreightModel{{
+					Origin:  &StageFreightOriginModel{Kind: types.StringNull(), Name: types.StringValue("app")},
+					Sources: sources,
+				}},
+			})
+			if err == nil || !strings.Contains(err.Error(), "requested_freight 0 sources must set direct = true or at least one stage") {
+				t.Fatalf("expected sources error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestExpandStageSpecRejectsDuplicateOrigins(t *testing.T) {
+	_, err := expandStageSpec(context.Background(), &StageResourceModel{
+		RequestedFreight: []StageRequestedFreightModel{
+			{
+				Origin:  &StageFreightOriginModel{Kind: types.StringValue("Warehouse"), Name: types.StringValue("app")},
+				Sources: &StageFreightSourcesModel{Direct: types.BoolValue(true)},
+			},
+			{
+				Origin:  &StageFreightOriginModel{Kind: types.StringNull(), Name: types.StringValue("app")},
+				Sources: &StageFreightSourcesModel{Direct: types.BoolValue(true)},
+			},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "duplicates origin") {
+		t.Fatalf("expected duplicate origin error, got %v", err)
+	}
+}
+
+func TestExpandStageSpecMapsSources(t *testing.T) {
+	spec, err := expandStageSpec(context.Background(), &StageResourceModel{
+		RequestedFreight: []StageRequestedFreightModel{
+			{
+				Origin:  &StageFreightOriginModel{Kind: types.StringNull(), Name: types.StringValue("app")},
+				Sources: &StageFreightSourcesModel{Direct: types.BoolValue(true), Stages: types.ListNull(types.StringType)},
+			},
+			{
+				Origin:  &StageFreightOriginModel{Kind: types.StringNull(), Name: types.StringValue("other")},
+				Sources: &StageFreightSourcesModel{Direct: types.BoolNull(), Stages: testStageStringList(t, "test", "qa")},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	direct := spec.RequestedFreight[0].Sources
+	if !direct.Direct {
+		t.Error("expected direct sources to have Direct true")
+	}
+	if direct.Stages != nil {
+		t.Errorf("expected direct sources to have nil Stages, got %v", direct.Stages)
+	}
+
+	upstream := spec.RequestedFreight[1].Sources
+	if upstream.Direct {
+		t.Error("expected upstream sources to have Direct false")
+	}
+	if !reflect.DeepEqual(upstream.Stages, []string{"test", "qa"}) {
+		t.Errorf("expected stages [test qa], got %v", upstream.Stages)
+	}
+}
+
+func TestExpandStageSpecRequiresStepUses(t *testing.T) {
+	_, err := expandStageSpec(context.Background(), &StageResourceModel{
+		RequestedFreight: []StageRequestedFreightModel{{
+			Origin:  &StageFreightOriginModel{Kind: types.StringNull(), Name: types.StringValue("app")},
+			Sources: &StageFreightSourcesModel{Direct: types.BoolValue(true)},
+		}},
+		PromotionTemplate: &StagePromotionTemplateModel{Step: []StageStepModel{{
+			Uses:   types.StringNull(),
+			As:     types.StringNull(),
+			Config: jsontypes.NewNormalizedNull(),
+		}}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "promotion_template step 0 uses must be set") {
+		t.Fatalf("expected step uses error, got %v", err)
+	}
+}
+
+func TestExpandStageSpecMapsStepConfig(t *testing.T) {
+	configJSON := `{"repoURL":"https://github.com/example/repo.git"}`
+	spec, err := expandStageSpec(context.Background(), &StageResourceModel{
+		Shard: types.StringValue("eu-west"),
+		RequestedFreight: []StageRequestedFreightModel{{
+			Origin:  &StageFreightOriginModel{Kind: types.StringNull(), Name: types.StringValue("app")},
+			Sources: &StageFreightSourcesModel{Direct: types.BoolValue(true)},
+		}},
+		PromotionTemplate: &StagePromotionTemplateModel{Step: []StageStepModel{
+			{Uses: types.StringValue("git-clone"), As: types.StringValue("clone"), Config: jsontypes.NewNormalizedValue(configJSON)},
+			{Uses: types.StringValue("compose-output"), As: types.StringNull(), Config: jsontypes.NewNormalizedNull()},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if spec.Shard != "eu-west" {
+		t.Errorf("expected shard %q, got %q", "eu-west", spec.Shard)
+	}
+	if spec.PromotionTemplate == nil {
+		t.Fatal("expected promotion template")
+	}
+	steps := spec.PromotionTemplate.Spec.Steps
+	if len(steps) != 2 {
+		t.Fatalf("expected 2 steps, got %d", len(steps))
+	}
+	if string(steps[0].Config) != configJSON {
+		t.Errorf("expected config %s, got %s", configJSON, steps[0].Config)
+	}
+	if steps[0].As != "clone" {
+		t.Errorf("expected as %q, got %q", "clone", steps[0].As)
+	}
+	if steps[1].Config != nil {
+		t.Errorf("expected nil config for null value, got %s", steps[1].Config)
+	}
+}
+
+func TestFlattenStagePreservesPlannedConfig(t *testing.T) {
+	plannedConfig := `{"b":1,"a":2}`
+	prior := &StageResourceModel{
+		Project: types.StringValue("demo"),
+		Name:    types.StringValue("staging"),
+		Shard:   types.StringNull(),
+		RequestedFreight: []StageRequestedFreightModel{{
+			Origin:  &StageFreightOriginModel{Kind: types.StringNull(), Name: types.StringValue("app")},
+			Sources: &StageFreightSourcesModel{Direct: types.BoolValue(true), Stages: types.ListNull(types.StringType)},
+		}},
+		PromotionTemplate: &StagePromotionTemplateModel{Step: []StageStepModel{{
+			Uses:   types.StringValue("git-clone"),
+			As:     types.StringNull(),
+			Config: jsontypes.NewNormalizedValue(plannedConfig),
+		}}},
+	}
+	stage := &client.Stage{
+		Metadata: client.StageMetadata{Name: "staging", Namespace: "demo"},
+		Spec: client.StageSpec{
+			RequestedFreight: []client.FreightRequest{{
+				Origin:  client.FreightOrigin{Kind: "Warehouse", Name: "app"},
+				Sources: client.FreightSources{Direct: true},
+			}},
+			PromotionTemplate: &client.PromotionTemplate{Spec: client.PromotionTemplateSpec{Steps: []client.PromotionStep{{
+				Uses:   "git-clone",
+				Config: json.RawMessage(`{"a":2,"b":1}`),
+			}}}},
+		},
+	}
+
+	flattened := flattenStage(context.Background(), "demo", stage, prior)
+	if flattened.PromotionTemplate == nil || len(flattened.PromotionTemplate.Step) != 1 {
+		t.Fatalf("expected one promotion template step, got %+v", flattened.PromotionTemplate)
+	}
+	if got := flattened.PromotionTemplate.Step[0].Config.ValueString(); got != plannedConfig {
+		t.Errorf("expected planned config %s echoed to state, got %s", plannedConfig, got)
+	}
+}
+
+func TestFlattenStageImport(t *testing.T) {
+	serverConfig := `{"repoURL":"https://github.com/example/repo.git"}`
+	stage := &client.Stage{
+		Metadata: client.StageMetadata{Name: "staging", Namespace: "demo"},
+		Spec: client.StageSpec{
+			Shard: "eu-west",
+			RequestedFreight: []client.FreightRequest{{
+				Origin:  client.FreightOrigin{Kind: "Warehouse", Name: "app"},
+				Sources: client.FreightSources{Direct: true},
+			}},
+			PromotionTemplate: &client.PromotionTemplate{Spec: client.PromotionTemplateSpec{Steps: []client.PromotionStep{
+				{Uses: "git-clone", As: "clone", Config: json.RawMessage(serverConfig)},
+				{Uses: "compose-output"},
+			}}},
+		},
+	}
+
+	data := flattenStage(context.Background(), "demo", stage, nil)
+
+	if got := data.ID.ValueString(); got != "demo/staging" {
+		t.Errorf("expected id demo/staging, got %s", got)
+	}
+	if got := data.Shard.ValueString(); got != "eu-west" {
+		t.Errorf("expected shard eu-west, got %s", got)
+	}
+	if len(data.RequestedFreight) != 1 {
+		t.Fatalf("expected 1 requested freight, got %d", len(data.RequestedFreight))
+	}
+	freight := data.RequestedFreight[0]
+	if freight.Origin == nil || freight.Origin.Kind.ValueString() != "Warehouse" {
+		t.Errorf("expected imported origin kind Warehouse, got %+v", freight.Origin)
+	}
+	if freight.Origin != nil && freight.Origin.Name.ValueString() != "app" {
+		t.Errorf("expected origin name app, got %s", freight.Origin.Name)
+	}
+	if freight.Sources == nil || !freight.Sources.Direct.ValueBool() {
+		t.Errorf("expected imported sources direct true, got %+v", freight.Sources)
+	}
+	if freight.Sources != nil && !freight.Sources.Stages.IsNull() {
+		t.Errorf("expected imported empty stages to be null, got %s", freight.Sources.Stages)
+	}
+	if data.PromotionTemplate == nil || len(data.PromotionTemplate.Step) != 2 {
+		t.Fatalf("expected 2 promotion template steps, got %+v", data.PromotionTemplate)
+	}
+	steps := data.PromotionTemplate.Step
+	if got := steps[0].Config.ValueString(); got != serverConfig {
+		t.Errorf("expected imported config %s, got %s", serverConfig, got)
+	}
+	if got := steps[0].As.ValueString(); got != "clone" {
+		t.Errorf("expected imported as clone, got %s", got)
+	}
+	if !steps[1].Config.IsNull() {
+		t.Errorf("expected empty server config to import as null, got %s", steps[1].Config)
+	}
+}
+
+func TestFlattenStagePreservesOmittedOptionals(t *testing.T) {
+	prior := &StageResourceModel{
+		Project: types.StringValue("demo"),
+		Name:    types.StringValue("staging"),
+		Shard:   types.StringNull(),
+		RequestedFreight: []StageRequestedFreightModel{{
+			Origin:  &StageFreightOriginModel{Kind: types.StringNull(), Name: types.StringValue("app")},
+			Sources: &StageFreightSourcesModel{Direct: types.BoolValue(true), Stages: types.ListNull(types.StringType)},
+		}},
+		PromotionTemplate: &StagePromotionTemplateModel{Step: []StageStepModel{{
+			Uses:   types.StringValue("git-clone"),
+			As:     types.StringNull(),
+			Config: jsontypes.NewNormalizedNull(),
+		}}},
+	}
+	stage := &client.Stage{
+		Metadata: client.StageMetadata{Name: "staging", Namespace: "demo"},
+		Spec: client.StageSpec{
+			Shard: "",
+			RequestedFreight: []client.FreightRequest{{
+				Origin:  client.FreightOrigin{Kind: "Warehouse", Name: "app"},
+				Sources: client.FreightSources{Direct: true},
+			}},
+			PromotionTemplate: &client.PromotionTemplate{Spec: client.PromotionTemplateSpec{Steps: []client.PromotionStep{{
+				Uses: "git-clone",
+				As:   "",
+			}}}},
+		},
+	}
+
+	data := flattenStage(context.Background(), "demo", stage, prior)
+
+	if !data.Shard.IsNull() {
+		t.Errorf("expected omitted shard to stay null, got %s", data.Shard)
+	}
+	if len(data.RequestedFreight) != 1 || data.RequestedFreight[0].Origin == nil {
+		t.Fatalf("expected 1 requested freight with origin, got %+v", data.RequestedFreight)
+	}
+	if !data.RequestedFreight[0].Origin.Kind.IsNull() {
+		t.Errorf("expected omitted origin kind to stay null, got %s", data.RequestedFreight[0].Origin.Kind)
+	}
+	if data.PromotionTemplate == nil || len(data.PromotionTemplate.Step) != 1 {
+		t.Fatalf("expected 1 promotion template step, got %+v", data.PromotionTemplate)
+	}
+	if !data.PromotionTemplate.Step[0].As.IsNull() {
+		t.Errorf("expected omitted step as to stay null, got %s", data.PromotionTemplate.Step[0].As)
 	}
 }
