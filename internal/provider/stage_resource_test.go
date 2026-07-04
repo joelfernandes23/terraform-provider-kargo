@@ -2,14 +2,21 @@ package provider
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
 	fwresource "github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/joelfernandes23/terraform-provider-kargo/internal/client"
 )
 
@@ -449,4 +456,300 @@ func TestFlattenStagePreservesOmittedOptionals(t *testing.T) {
 	if !data.PromotionTemplate.Step[0].As.IsNull() {
 		t.Errorf("expected omitted step as to stay null, got %s", data.PromotionTemplate.Step[0].As)
 	}
+}
+
+type stageTestServer struct {
+	*httptest.Server
+
+	mu          sync.RWMutex
+	stages      map[string]map[string]any // key: project/name; value: stored manifest (metadata + spec)
+	updateCount int
+}
+
+// testStageServer emulates the wire contract observed against a real Kargo
+// v1.10.8 (phase 09-01 live check): GetStage must be requested with
+// format RAW_FORMAT_JSON and responds {"raw": base64(standard k8s JSON
+// manifest)} with inline step config. The handler fails the test on any
+// structured (non-raw) read so the suite cannot silently validate the
+// protojson-corrupted path.
+func testStageServer(t *testing.T) *stageTestServer {
+	t.Helper()
+
+	state := &stageTestServer{
+		stages: map[string]map[string]any{},
+	}
+
+	state.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case endsWith(r.URL.Path, "/AdminLogin"):
+			assertNoError(t, json.NewEncoder(w).Encode(map[string]string{"idToken": "test-jwt"})) //nolint:gosec // test
+		case endsWith(r.URL.Path, "/CreateResource"):
+			manifest, encoded := decodeStageManifest(t, r)
+			key := stageManifestKey(t, manifest)
+
+			state.mu.Lock()
+			state.stages[key] = storedStage(manifest, fmt.Sprintf("%d", len(state.stages)+1))
+			state.mu.Unlock()
+
+			assertNoError(t, json.NewEncoder(w).Encode(map[string]any{
+				"results": []map[string]string{{"createdResourceManifest": encoded}},
+			}))
+		case endsWith(r.URL.Path, "/UpdateResource"):
+			manifest, encoded := decodeStageManifest(t, r)
+			key := stageManifestKey(t, manifest)
+
+			state.mu.Lock()
+			if _, ok := state.stages[key]; !ok {
+				state.mu.Unlock()
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = fmt.Fprint(w, `{"code":"not_found","message":"stage not found"}`)
+				return
+			}
+			state.updateCount++
+			state.stages[key] = storedStage(manifest, fmt.Sprintf("%d", state.updateCount+100))
+			state.mu.Unlock()
+
+			assertNoError(t, json.NewEncoder(w).Encode(map[string]any{
+				"results": []map[string]string{{"updatedResourceManifest": encoded}},
+			}))
+		case endsWith(r.URL.Path, "/GetStage"):
+			var body map[string]string
+			assertNoError(t, json.NewDecoder(r.Body).Decode(&body))
+			// Pitfall 3: a structured (non-raw) read returns protojson-encoded step
+			// config ({"raw": base64}); the client must never regress to that path.
+			if body["format"] != "RAW_FORMAT_JSON" {
+				t.Errorf("GetStage must request RAW_FORMAT_JSON, got %q", body["format"])
+			}
+			key := stageID(body["project"], body["name"])
+
+			state.mu.RLock()
+			stage, ok := state.stages[key]
+			state.mu.RUnlock()
+			if !ok {
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = fmt.Fprint(w, `{"code":"not_found","message":"stage not found"}`)
+				return
+			}
+			// Marshaling the stored map sorts keys, emulating the k8s
+			// re-serialization the real server produces for raw-format reads.
+			manifestJSON, err := json.Marshal(stage)
+			assertNoError(t, err)
+			assertNoError(t, json.NewEncoder(w).Encode(map[string]string{
+				"raw": base64.StdEncoding.EncodeToString(manifestJSON),
+			}))
+		case endsWith(r.URL.Path, "/DeleteStage"):
+			var body map[string]string
+			assertNoError(t, json.NewDecoder(r.Body).Decode(&body))
+			key := stageID(body["project"], body["name"])
+
+			state.mu.Lock()
+			if _, ok := state.stages[key]; !ok {
+				state.mu.Unlock()
+				// Real Kargo propagates the k8s 404 for missing stages (Pitfall 7).
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = fmt.Fprint(w, `{"code":"not_found","message":"stage not found"}`)
+				return
+			}
+			delete(state.stages, key)
+			state.mu.Unlock()
+
+			_, _ = w.Write([]byte(`{}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+
+	return state
+}
+
+func decodeStageManifest(t *testing.T, r *http.Request) (manifest map[string]any, encoded string) {
+	t.Helper()
+
+	var body map[string]string
+	assertNoError(t, json.NewDecoder(r.Body).Decode(&body))
+	encoded = body["manifest"]
+	manifestJSON, err := base64.StdEncoding.DecodeString(encoded)
+	assertNoError(t, err)
+
+	assertNoError(t, json.Unmarshal(manifestJSON, &manifest))
+	if manifest["kind"] != "Stage" {
+		t.Fatalf("expected kind Stage, got %v", manifest["kind"])
+	}
+	return manifest, encoded
+}
+
+func stageManifestKey(t *testing.T, manifest map[string]any) string {
+	t.Helper()
+
+	metadata, ok := manifest["metadata"].(map[string]any)
+	if !ok {
+		t.Fatal("manifest metadata missing")
+	}
+	project, _ := metadata["namespace"].(string)
+	name, _ := metadata["name"].(string)
+	if project == "" || name == "" {
+		t.Fatalf("manifest missing namespace/name: %#v", metadata)
+	}
+	return stageID(project, name)
+}
+
+// storedStage keeps exactly what CreateResource received (metadata + spec) so
+// raw-format GetStage responses round-trip the manifest the client sent.
+func storedStage(manifest map[string]any, resourceVersion string) map[string]any {
+	metadata := manifest["metadata"].(map[string]any)
+	name := metadata["name"].(string)
+
+	return map[string]any{
+		"metadata": map[string]any{
+			"name":            name,
+			"namespace":       metadata["namespace"],
+			"uid":             "uid-" + name,
+			"resourceVersion": resourceVersion,
+		},
+		"spec": manifest["spec"],
+	}
+}
+
+func (s *stageTestServer) updateCountForTest() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.updateCount
+}
+
+func testCheckStageUpdateCountAtLeast(srv *stageTestServer, minimum int) resource.TestCheckFunc {
+	return func(_ *terraform.State) error {
+		if got := srv.updateCountForTest(); got < minimum {
+			return fmt.Errorf("expected at least %d stage updates, got %d", minimum, got)
+		}
+		return nil
+	}
+}
+
+func TestAccStageResource_basic(t *testing.T) {
+	srv := testStageServer(t)
+	defer srv.Close()
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{
+				Config: testStageResourceBasicConfig(srv.URL, "tf-test-project", "tf-test-stage", "eu-west"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("kargo_stage.test", "id", "tf-test-project/tf-test-stage"),
+					resource.TestCheckResourceAttr("kargo_stage.test", "shard", "eu-west"),
+					resource.TestCheckResourceAttr("kargo_stage.test", "requested_freight.0.origin.name", "app"),
+					resource.TestCheckResourceAttr("kargo_stage.test", "requested_freight.0.sources.direct", "true"),
+					resource.TestCheckResourceAttr("kargo_stage.test", "promotion_template.step.0.uses", "git-clone"),
+					resource.TestCheckResourceAttr("kargo_stage.test", "promotion_template.step.0.as", "clone"),
+				),
+			},
+			{
+				Config: testStageResourceBasicConfig(srv.URL, "tf-test-project", "tf-test-stage", "us-east"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("kargo_stage.test", "shard", "us-east"),
+					testCheckStageUpdateCountAtLeast(srv, 1),
+				),
+			},
+			{
+				// Idempotency gate (Pitfall 2): refresh must produce an empty plan.
+				Config:   testStageResourceBasicConfig(srv.URL, "tf-test-project", "tf-test-stage", "us-east"),
+				PlanOnly: true,
+			},
+		},
+	})
+}
+
+func TestAccStageResource_import(t *testing.T) {
+	srv := testStageServer(t)
+	defer srv.Close()
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{
+				Config: testStageResourceImportConfig(srv.URL, "tf-test-project", "tf-test-stage"),
+			},
+			{
+				ResourceName:      "kargo_stage.test",
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
+func testStageProviderConfig(url string) string {
+	return fmt.Sprintf(`
+provider "kargo" {
+  api_url                  = %q
+  admin_password           = "admin"
+  insecure_skip_tls_verify = true
+}
+`, url)
+}
+
+func testStageResourceBasicConfig(url, project, name, shard string) string {
+	return fmt.Sprintf(`%s
+resource "kargo_stage" "test" {
+  project = %q
+  name    = %q
+  shard   = %q
+
+  requested_freight {
+    origin {
+      name = "app"
+    }
+    sources {
+      direct = true
+    }
+  }
+
+  promotion_template {
+    step {
+      uses = "git-clone"
+      as   = "clone"
+      config = jsonencode({
+        checkout = [{ branch = "main", path = "./src" }]
+        repoURL  = "https://github.com/example/repo.git"
+      })
+    }
+  }
+}
+`, testStageProviderConfig(url), project, name, shard)
+}
+
+// testStageResourceImportConfig sets origin.kind explicitly: import materializes
+// the server's kind while a config that omits it keeps null in created state, so
+// strict ImportStateVerify requires the value to be present in both.
+func testStageResourceImportConfig(url, project, name string) string {
+	return fmt.Sprintf(`%s
+resource "kargo_stage" "test" {
+  project = %q
+  name    = %q
+  shard   = "eu-west"
+
+  requested_freight {
+    origin {
+      kind = "Warehouse"
+      name = "app"
+    }
+    sources {
+      direct = true
+    }
+  }
+
+  promotion_template {
+    step {
+      uses = "git-clone"
+      as   = "clone"
+      config = jsonencode({
+        checkout = [{ branch = "main", path = "./src" }]
+        repoURL  = "https://github.com/example/repo.git"
+      })
+    }
+  }
+}
+`, testStageProviderConfig(url), project, name)
 }
