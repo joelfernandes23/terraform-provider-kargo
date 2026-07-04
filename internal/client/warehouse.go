@@ -268,8 +268,11 @@ type warehouseManifest struct {
 	Spec       WarehouseSpec     `json:"spec"`
 }
 
-func marshalWarehouseManifest(project, name string, spec WarehouseSpec) ([]byte, error) {
-	return json.Marshal(warehouseManifest{
+// marshalWarehouseManifest cannot fail: warehouseManifest is composed solely of
+// marshal-safe types (strings, maps, slices, nested structs) with no
+// json.RawMessage or custom marshaler fields.
+func marshalWarehouseManifest(project, name string, spec WarehouseSpec) []byte {
+	manifest, _ := json.Marshal(warehouseManifest{
 		APIVersion: "kargo.akuity.io/v1alpha1",
 		Kind:       "Warehouse",
 		Metadata: WarehouseMetadata{
@@ -278,6 +281,7 @@ func marshalWarehouseManifest(project, name string, spec WarehouseSpec) ([]byte,
 		},
 		Spec: spec,
 	})
+	return manifest
 }
 
 func checkResourceResult(resp resourceResultResponse) error {
@@ -291,12 +295,7 @@ func checkResourceResult(resp resourceResultResponse) error {
 }
 
 func (c *Client) CreateWarehouse(ctx context.Context, project, name string, spec WarehouseSpec) (*Warehouse, error) {
-	manifest, err := marshalWarehouseManifest(project, name, spec)
-	if err != nil {
-		return nil, fmt.Errorf("creating warehouse %q/%q manifest: %w", project, name, err)
-	}
-
-	encoded := base64.StdEncoding.EncodeToString(manifest)
+	encoded := base64.StdEncoding.EncodeToString(marshalWarehouseManifest(project, name, spec))
 
 	var resp resourceResultResponse
 	if err := c.Do(ctx, "CreateResource", map[string]string{"manifest": encoded}, &resp); err != nil {
@@ -341,12 +340,7 @@ func (c *Client) ListWarehouseFreight(ctx context.Context, project, warehouse st
 }
 
 func (c *Client) UpdateWarehouse(ctx context.Context, project, name string, spec WarehouseSpec) (*Warehouse, error) {
-	manifest, err := marshalWarehouseManifest(project, name, spec)
-	if err != nil {
-		return nil, fmt.Errorf("updating warehouse %q/%q manifest: %w", project, name, err)
-	}
-
-	encoded := base64.StdEncoding.EncodeToString(manifest)
+	encoded := base64.StdEncoding.EncodeToString(marshalWarehouseManifest(project, name, spec))
 
 	var resp resourceResultResponse
 	if err := c.Do(ctx, "UpdateResource", map[string]string{"manifest": encoded}, &resp); err != nil {
