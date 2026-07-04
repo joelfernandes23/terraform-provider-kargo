@@ -177,3 +177,243 @@ func normalizeJSON(t *testing.T, data json.RawMessage) []byte {
 	assertNoError(t, err)
 	return out
 }
+
+func testStageSpec() StageSpec {
+	return StageSpec{
+		Shard: "eu-west",
+		RequestedFreight: []FreightRequest{{
+			Origin:  FreightOrigin{Kind: "Warehouse", Name: "app"},
+			Sources: FreightSources{Stages: []string{"test"}},
+		}},
+		PromotionTemplate: &PromotionTemplate{Spec: PromotionTemplateSpec{Steps: []PromotionStep{{
+			Uses:   "git-clone",
+			As:     "clone",
+			Config: json.RawMessage(`{"repoURL":"https://github.com/example/repo.git","checkout":[{"branch":"main","path":"./src"}]}`),
+		}}}},
+	}
+}
+
+func assertStageManifest(t *testing.T, r *http.Request, wantConfig json.RawMessage) {
+	t.Helper()
+
+	var body map[string]string
+	assertNoError(t, json.NewDecoder(r.Body).Decode(&body))
+	manifest, err := base64.StdEncoding.DecodeString(body["manifest"])
+	assertNoError(t, err)
+
+	var obj map[string]any
+	assertNoError(t, json.Unmarshal(manifest, &obj))
+	assertEqual(t, "Stage", obj["kind"].(string))
+	assertEqual(t, "kargo.akuity.io/v1alpha1", obj["apiVersion"].(string))
+	metadata := obj["metadata"].(map[string]any)
+	assertEqual(t, "staging", metadata["name"].(string))
+	assertEqual(t, "demo", metadata["namespace"].(string))
+
+	spec := obj["spec"].(map[string]any)
+	freight := spec["requestedFreight"].([]any)
+	origin := freight[0].(map[string]any)["origin"].(map[string]any)
+	assertEqual(t, "app", origin["name"].(string))
+
+	steps := spec["promotionTemplate"].(map[string]any)["spec"].(map[string]any)["steps"].([]any)
+	gotConfig, err := json.Marshal(steps[0].(map[string]any)["config"])
+	assertNoError(t, err)
+	if !bytes.Equal(normalizeJSON(t, wantConfig), normalizeJSON(t, gotConfig)) {
+		t.Errorf("manifest step config mismatch: want %s, got %s", wantConfig, gotConfig)
+	}
+}
+
+func rawStageFixtureHandler(t *testing.T, w http.ResponseWriter) {
+	t.Helper()
+	fixture, err := os.ReadFile("testdata/stage_response.json")
+	assertNoError(t, err)
+	assertNoError(t, json.NewEncoder(w).Encode(map[string]string{
+		"raw": base64.StdEncoding.EncodeToString(fixture),
+	}))
+}
+
+func TestCreateStage(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		spec := testStageSpec()
+		callCount := 0
+		c, srv := testClientWithServer(t, func(w http.ResponseWriter, r *http.Request) {
+			callCount++
+			w.Header().Set("Content-Type", "application/json")
+
+			if callCount == 1 {
+				assertSuffix(t, r.URL.Path, "/CreateResource")
+				assertStageManifest(t, r, spec.PromotionTemplate.Spec.Steps[0].Config)
+				assertNoError(t, json.NewEncoder(w).Encode(resourceResultResponse{
+					Results: []struct {
+						CreatedResourceManifest string `json:"createdResourceManifest,omitempty"`
+						UpdatedResourceManifest string `json:"updatedResourceManifest,omitempty"`
+						Error                   string `json:"error,omitempty"`
+					}{{CreatedResourceManifest: "dGVzdA=="}},
+				}))
+				return
+			}
+
+			assertSuffix(t, r.URL.Path, "/GetStage")
+			rawStageFixtureHandler(t, w)
+		})
+		defer srv.Close()
+
+		s, err := c.CreateStage(context.Background(), "demo", "staging", spec)
+		assertNoError(t, err)
+		if s == nil {
+			t.Fatal("expected non-nil stage after create")
+		}
+		assertEqual(t, "staging", s.Metadata.Name)
+		assertEqual(t, "demo", s.Metadata.Namespace)
+	})
+
+	t.Run("result_error", func(t *testing.T) {
+		c, srv := testClientWithServer(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"results":[{"error":"stage already exists"}]}`))
+		})
+		defer srv.Close()
+
+		_, err := c.CreateStage(context.Background(), "demo", "staging", testStageSpec())
+		assertErrorContains(t, err, "creating stage")
+		assertErrorContains(t, err, "stage already exists")
+	})
+
+	t.Run("no_results", func(t *testing.T) {
+		c, srv := testClientWithServer(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"results":[]}`))
+		})
+		defer srv.Close()
+
+		_, err := c.CreateStage(context.Background(), "demo", "staging", testStageSpec())
+		assertErrorContains(t, err, "no result returned")
+	})
+
+	t.Run("marshal_error", func(t *testing.T) {
+		spec := testStageSpec()
+		spec.PromotionTemplate.Spec.Steps[0].Config = json.RawMessage(`{invalid`)
+
+		c, srv := testClientWithServer(t, func(_ http.ResponseWriter, _ *http.Request) {
+			t.Error("server must not be called when manifest marshaling fails")
+		})
+		defer srv.Close()
+
+		_, err := c.CreateStage(context.Background(), "demo", "staging", spec)
+		assertErrorContains(t, err, "manifest")
+	})
+
+	t.Run("do_error", func(t *testing.T) {
+		c, srv := testClientWithServer(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"code":"internal","message":"boom"}`))
+		})
+		defer srv.Close()
+
+		_, err := c.CreateStage(context.Background(), "demo", "staging", testStageSpec())
+		assertErrorContains(t, err, "creating stage")
+	})
+}
+
+func TestUpdateStage(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		spec := testStageSpec()
+		callCount := 0
+		c, srv := testClientWithServer(t, func(w http.ResponseWriter, r *http.Request) {
+			callCount++
+			w.Header().Set("Content-Type", "application/json")
+
+			if callCount == 1 {
+				assertSuffix(t, r.URL.Path, "/UpdateResource")
+				assertStageManifest(t, r, spec.PromotionTemplate.Spec.Steps[0].Config)
+				assertNoError(t, json.NewEncoder(w).Encode(resourceResultResponse{
+					Results: []struct {
+						CreatedResourceManifest string `json:"createdResourceManifest,omitempty"`
+						UpdatedResourceManifest string `json:"updatedResourceManifest,omitempty"`
+						Error                   string `json:"error,omitempty"`
+					}{{UpdatedResourceManifest: "dGVzdA=="}},
+				}))
+				return
+			}
+
+			assertSuffix(t, r.URL.Path, "/GetStage")
+			rawStageFixtureHandler(t, w)
+		})
+		defer srv.Close()
+
+		s, err := c.UpdateStage(context.Background(), "demo", "staging", spec)
+		assertNoError(t, err)
+		if s == nil {
+			t.Fatal("expected non-nil stage after update")
+		}
+		assertEqual(t, "staging", s.Metadata.Name)
+	})
+
+	t.Run("result_error", func(t *testing.T) {
+		c, srv := testClientWithServer(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"results":[{"error":"webhook rejected"}]}`))
+		})
+		defer srv.Close()
+
+		_, err := c.UpdateStage(context.Background(), "demo", "staging", testStageSpec())
+		assertErrorContains(t, err, "updating stage")
+		assertErrorContains(t, err, "webhook rejected")
+	})
+
+	t.Run("marshal_error", func(t *testing.T) {
+		spec := testStageSpec()
+		spec.PromotionTemplate.Spec.Steps[0].Config = json.RawMessage(`{invalid`)
+
+		c, srv := testClientWithServer(t, func(_ http.ResponseWriter, _ *http.Request) {
+			t.Error("server must not be called when manifest marshaling fails")
+		})
+		defer srv.Close()
+
+		_, err := c.UpdateStage(context.Background(), "demo", "staging", spec)
+		assertErrorContains(t, err, "manifest")
+	})
+
+	t.Run("do_error", func(t *testing.T) {
+		c, srv := testClientWithServer(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"code":"internal","message":"boom"}`))
+		})
+		defer srv.Close()
+
+		_, err := c.UpdateStage(context.Background(), "demo", "staging", testStageSpec())
+		assertErrorContains(t, err, "updating stage")
+	})
+}
+
+func TestDeleteStage(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		c, srv := testClientWithServer(t, func(w http.ResponseWriter, r *http.Request) {
+			assertSuffix(t, r.URL.Path, "/DeleteStage")
+
+			var body map[string]string
+			assertNoError(t, json.NewDecoder(r.Body).Decode(&body))
+			assertEqual(t, "demo", body["project"])
+			assertEqual(t, "staging", body["name"])
+
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{}`))
+		})
+		defer srv.Close()
+
+		assertNoError(t, c.DeleteStage(context.Background(), "demo", "staging"))
+	})
+
+	t.Run("not_found", func(t *testing.T) {
+		c, srv := testClientWithServer(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"code":"not_found","message":"stage not found"}`))
+		})
+		defer srv.Close()
+
+		err := c.DeleteStage(context.Background(), "demo", "gone")
+		assertErrorContains(t, err, "deleting stage")
+		if !IsNotFound(err) {
+			t.Errorf("expected IsNotFound to recognize wrapped error: %v", err)
+		}
+	})
+}

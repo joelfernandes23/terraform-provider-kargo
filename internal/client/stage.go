@@ -75,3 +75,15 @@ func (c *Client) GetStage(ctx context.Context, project, name string) (*Stage, er
 
 	return &stage, nil
 }
+
+func (c *Client) CreateStage(_ context.Context, project, name string, _ StageSpec) (*Stage, error) {
+	return nil, fmt.Errorf("stage create for %q/%q not implemented", project, name)
+}
+
+func (c *Client) UpdateStage(_ context.Context, project, name string, _ StageSpec) (*Stage, error) {
+	return nil, fmt.Errorf("stage update for %q/%q not implemented", project, name)
+}
+
+func (c *Client) DeleteStage(_ context.Context, project, name string) error {
+	return fmt.Errorf("stage delete for %q/%q not implemented", project, name)
+}
