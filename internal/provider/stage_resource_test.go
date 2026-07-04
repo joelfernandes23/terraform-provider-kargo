@@ -612,6 +612,12 @@ func storedStage(manifest map[string]any, resourceVersion string) map[string]any
 	}
 }
 
+func (s *stageTestServer) deleteStageForTest(key string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.stages, key)
+}
+
 func (s *stageTestServer) updateCountForTest() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -635,7 +641,7 @@ func TestAccStageResource_basic(t *testing.T) {
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories(),
 		Steps: []resource.TestStep{
 			{
-				Config: testStageResourceBasicConfig(srv.URL, "tf-test-project", "tf-test-stage", "eu-west"),
+				Config: testStageResourceBasicConfig(srv.URL, "eu-west"),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("kargo_stage.test", "id", "tf-test-project/tf-test-stage"),
 					resource.TestCheckResourceAttr("kargo_stage.test", "shard", "eu-west"),
@@ -646,7 +652,7 @@ func TestAccStageResource_basic(t *testing.T) {
 				),
 			},
 			{
-				Config: testStageResourceBasicConfig(srv.URL, "tf-test-project", "tf-test-stage", "us-east"),
+				Config: testStageResourceBasicConfig(srv.URL, "us-east"),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("kargo_stage.test", "shard", "us-east"),
 					testCheckStageUpdateCountAtLeast(srv, 1),
@@ -654,7 +660,7 @@ func TestAccStageResource_basic(t *testing.T) {
 			},
 			{
 				// Idempotency gate (Pitfall 2): refresh must produce an empty plan.
-				Config:   testStageResourceBasicConfig(srv.URL, "tf-test-project", "tf-test-stage", "us-east"),
+				Config:   testStageResourceBasicConfig(srv.URL, "us-east"),
 				PlanOnly: true,
 			},
 		},
@@ -669,7 +675,7 @@ func TestAccStageResource_import(t *testing.T) {
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories(),
 		Steps: []resource.TestStep{
 			{
-				Config: testStageResourceImportConfig(srv.URL, "tf-test-project", "tf-test-stage"),
+				Config: testStageResourceImportConfig(srv.URL),
 			},
 			{
 				ResourceName:      "kargo_stage.test",
@@ -690,11 +696,11 @@ provider "kargo" {
 `, url)
 }
 
-func testStageResourceBasicConfig(url, project, name, shard string) string {
+func testStageResourceBasicConfig(url, shard string) string {
 	return fmt.Sprintf(`%s
 resource "kargo_stage" "test" {
-  project = %q
-  name    = %q
+  project = "tf-test-project"
+  name    = "tf-test-stage"
   shard   = %q
 
   requested_freight {
@@ -717,17 +723,17 @@ resource "kargo_stage" "test" {
     }
   }
 }
-`, testStageProviderConfig(url), project, name, shard)
+`, testStageProviderConfig(url), shard)
 }
 
 // testStageResourceImportConfig sets origin.kind explicitly: import materializes
 // the server's kind while a config that omits it keeps null in created state, so
 // strict ImportStateVerify requires the value to be present in both.
-func testStageResourceImportConfig(url, project, name string) string {
+func testStageResourceImportConfig(url string) string {
 	return fmt.Sprintf(`%s
 resource "kargo_stage" "test" {
-  project = %q
-  name    = %q
+  project = "tf-test-project"
+  name    = "tf-test-stage"
   shard   = "eu-west"
 
   requested_freight {
@@ -751,5 +757,229 @@ resource "kargo_stage" "test" {
     }
   }
 }
-`, testStageProviderConfig(url), project, name)
+`, testStageProviderConfig(url))
+}
+
+func TestAccStageResource_promotionSteps(t *testing.T) {
+	srv := testStageServer(t)
+	defer srv.Close()
+
+	checkStepOneConfig := func(retries float64) resource.TestCheckFunc {
+		return resource.TestCheckResourceAttrWith("kargo_stage.test", "promotion_template.step.1.config", func(value string) error {
+			var config map[string]any
+			if err := json.Unmarshal([]byte(value), &config); err != nil {
+				return fmt.Errorf("config is not valid JSON: %w", err)
+			}
+			if got := config["retries"]; got != retries {
+				return fmt.Errorf("expected retries %v as a JSON number, got %#v", retries, got)
+			}
+			if got := config["wait"]; got != true {
+				return fmt.Errorf("expected wait true as a JSON bool, got %#v", got)
+			}
+			return nil
+		})
+	}
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{
+				Config: testStagePromotionStepsConfig(srv.URL, 3),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("kargo_stage.test", "promotion_template.step.#", "2"),
+					resource.TestCheckResourceAttr("kargo_stage.test", "promotion_template.step.0.uses", "git-clone"),
+					resource.TestCheckResourceAttr("kargo_stage.test", "promotion_template.step.1.uses", "argocd-update"),
+					checkStepOneConfig(3),
+				),
+			},
+			{
+				// Pitfall 2 regression gate: same semantic config with the object keys
+				// written in a different order must plan clean (jsonencode sorts keys
+				// and Normalized semantic equality covers whitespace differences).
+				Config:   testStagePromotionStepsReorderedConfig(srv.URL),
+				PlanOnly: true,
+			},
+			{
+				Config: testStagePromotionStepsConfig(srv.URL, 5),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					checkStepOneConfig(5),
+					testCheckStageUpdateCountAtLeast(srv, 1),
+				),
+			},
+		},
+	})
+}
+
+func TestAccStageResource_outOfBandDeletion(t *testing.T) {
+	srv := testStageServer(t)
+	defer srv.Close()
+
+	config := testStageResourceBasicConfig(srv.URL, "eu-west")
+	key := "tf-test-project/tf-test-stage"
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check:  resource.TestCheckResourceAttr("kargo_stage.test", "id", key),
+			},
+			{
+				PreConfig: func() {
+					srv.deleteStageForTest(key)
+				},
+				RefreshState:       true,
+				ExpectNonEmptyPlan: true,
+			},
+			{
+				Config: config,
+				Check:  resource.TestCheckResourceAttr("kargo_stage.test", "id", key),
+			},
+		},
+	})
+}
+
+func TestAccStageResource_multiStage(t *testing.T) {
+	srv := testStageServer(t)
+	defer srv.Close()
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{
+				Config: testStageMultiStageConfig(srv.URL),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("kargo_stage.test", "id", "tf-test-project/test"),
+					resource.TestCheckResourceAttr("kargo_stage.test", "requested_freight.0.sources.direct", "true"),
+					resource.TestCheckResourceAttr("kargo_stage.staging", "id", "tf-test-project/staging"),
+					resource.TestCheckResourceAttr("kargo_stage.staging", "requested_freight.0.sources.stages.0", "test"),
+					resource.TestCheckResourceAttr("kargo_stage.prod", "id", "tf-test-project/prod"),
+					resource.TestCheckResourceAttr("kargo_stage.prod", "requested_freight.0.sources.stages.0", "staging"),
+				),
+			},
+		},
+	})
+}
+
+func testStagePromotionStepsConfig(url string, retries int) string {
+	return fmt.Sprintf(`%s
+resource "kargo_stage" "test" {
+  project = "tf-test-project"
+  name    = "tf-test-stage"
+
+  requested_freight {
+    origin {
+      name = "app"
+    }
+    sources {
+      direct = true
+    }
+  }
+
+  promotion_template {
+    step {
+      uses = "git-clone"
+      as   = "clone"
+      config = jsonencode({
+        checkout = [{ branch = "main", path = "./src" }]
+        repoURL  = "https://github.com/example/repo.git"
+      })
+    }
+    step {
+      uses = "argocd-update"
+      config = jsonencode({
+        apps    = [{ name = "app-staging" }]
+        retries = %d
+        wait    = true
+      })
+    }
+  }
+}
+`, testStageProviderConfig(url), retries)
+}
+
+// testStagePromotionStepsReorderedConfig is semantically identical to
+// testStagePromotionStepsConfig(url, 3) but writes the config object keys in a
+// different order in HCL.
+func testStagePromotionStepsReorderedConfig(url string) string {
+	return fmt.Sprintf(`%s
+resource "kargo_stage" "test" {
+  project = "tf-test-project"
+  name    = "tf-test-stage"
+
+  requested_freight {
+    origin {
+      name = "app"
+    }
+    sources {
+      direct = true
+    }
+  }
+
+  promotion_template {
+    step {
+      uses = "git-clone"
+      as   = "clone"
+      config = jsonencode({
+        repoURL  = "https://github.com/example/repo.git"
+        checkout = [{ path = "./src", branch = "main" }]
+      })
+    }
+    step {
+      uses = "argocd-update"
+      config = jsonencode({
+        wait    = true
+        retries = 3
+        apps    = [{ name = "app-staging" }]
+      })
+    }
+  }
+}
+`, testStageProviderConfig(url))
+}
+
+func testStageMultiStageConfig(url string) string {
+	return fmt.Sprintf(`%s
+resource "kargo_stage" "test" {
+  project = "tf-test-project"
+  name    = "test"
+
+  requested_freight {
+    origin {
+      name = "app"
+    }
+    sources {
+      direct = true
+    }
+  }
+}
+
+resource "kargo_stage" "staging" {
+  project = "tf-test-project"
+  name    = "staging"
+
+  requested_freight {
+    origin {
+      name = "app"
+    }
+    sources {
+      stages = [kargo_stage.test.name]
+    }
+  }
+}
+
+resource "kargo_stage" "prod" {
+  project = "tf-test-project"
+  name    = "prod"
+
+  requested_freight {
+    origin {
+      name = "app"
+    }
+    sources {
+      stages = [kargo_stage.staging.name]
+    }
+  }
+}
+`, testStageProviderConfig(url))
 }
