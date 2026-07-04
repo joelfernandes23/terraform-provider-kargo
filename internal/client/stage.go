@@ -51,6 +51,27 @@ type PromotionStep struct {
 }
 
 // GetStage returns (nil, nil) when the Stage exists but is being deleted.
-func (c *Client) GetStage(_ context.Context, project, name string) (*Stage, error) {
-	return nil, fmt.Errorf("stage client for %q/%q not implemented", project, name)
+//
+// It reads with format RAW_FORMAT_JSON (base64 of the full k8s JSON manifest) because
+// the structured response protojson-encodes promotionTemplate step config as
+// {"raw": "<base64>"} instead of inline JSON.
+func (c *Client) GetStage(ctx context.Context, project, name string) (*Stage, error) {
+	var resp struct {
+		Raw []byte `json:"raw"` // encoding/json base64-decodes into []byte automatically
+	}
+	req := map[string]string{"project": project, "name": name, "format": "RAW_FORMAT_JSON"}
+	if err := c.Do(ctx, "GetStage", req, &resp); err != nil {
+		return nil, fmt.Errorf("getting stage %q/%q: %w", project, name, err)
+	}
+
+	var stage Stage
+	if err := json.Unmarshal(resp.Raw, &stage); err != nil {
+		return nil, fmt.Errorf("decoding stage %q/%q manifest: %w", project, name, err)
+	}
+
+	if stage.Metadata.DeletionTimestamp != nil {
+		return nil, nil
+	}
+
+	return &stage, nil
 }
