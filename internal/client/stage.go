@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 )
@@ -76,14 +77,68 @@ func (c *Client) GetStage(ctx context.Context, project, name string) (*Stage, er
 	return &stage, nil
 }
 
-func (c *Client) CreateStage(_ context.Context, project, name string, _ StageSpec) (*Stage, error) {
-	return nil, fmt.Errorf("stage create for %q/%q not implemented", project, name)
+type stageManifest struct {
+	APIVersion string        `json:"apiVersion"`
+	Kind       string        `json:"kind"`
+	Metadata   StageMetadata `json:"metadata"`
+	Spec       StageSpec     `json:"spec"`
 }
 
-func (c *Client) UpdateStage(_ context.Context, project, name string, _ StageSpec) (*Stage, error) {
-	return nil, fmt.Errorf("stage update for %q/%q not implemented", project, name)
+func marshalStageManifest(project, name string, spec StageSpec) ([]byte, error) {
+	return json.Marshal(stageManifest{
+		APIVersion: "kargo.akuity.io/v1alpha1",
+		Kind:       "Stage",
+		Metadata: StageMetadata{
+			Name:      name,
+			Namespace: project,
+		},
+		Spec: spec,
+	})
 }
 
-func (c *Client) DeleteStage(_ context.Context, project, name string) error {
-	return fmt.Errorf("stage delete for %q/%q not implemented", project, name)
+func (c *Client) CreateStage(ctx context.Context, project, name string, spec StageSpec) (*Stage, error) {
+	manifest, err := marshalStageManifest(project, name, spec)
+	if err != nil {
+		return nil, fmt.Errorf("creating stage %q/%q manifest: %w", project, name, err)
+	}
+
+	encoded := base64.StdEncoding.EncodeToString(manifest)
+
+	var resp resourceResultResponse
+	if err := c.Do(ctx, "CreateResource", map[string]string{"manifest": encoded}, &resp); err != nil {
+		return nil, fmt.Errorf("creating stage %q/%q: %w", project, name, err)
+	}
+	if err := checkResourceResult(resp); err != nil {
+		return nil, fmt.Errorf("creating stage %q/%q: %w", project, name, err)
+	}
+
+	return c.GetStage(ctx, project, name)
+}
+
+func (c *Client) UpdateStage(ctx context.Context, project, name string, spec StageSpec) (*Stage, error) {
+	manifest, err := marshalStageManifest(project, name, spec)
+	if err != nil {
+		return nil, fmt.Errorf("updating stage %q/%q manifest: %w", project, name, err)
+	}
+
+	encoded := base64.StdEncoding.EncodeToString(manifest)
+
+	var resp resourceResultResponse
+	if err := c.Do(ctx, "UpdateResource", map[string]string{"manifest": encoded}, &resp); err != nil {
+		return nil, fmt.Errorf("updating stage %q/%q: %w", project, name, err)
+	}
+	if err := checkResourceResult(resp); err != nil {
+		return nil, fmt.Errorf("updating stage %q/%q: %w", project, name, err)
+	}
+
+	return c.GetStage(ctx, project, name)
+}
+
+// DeleteStage does not swallow not-found: Kargo propagates the k8s 404 as a
+// connect not_found error, which callers detect via IsNotFound.
+func (c *Client) DeleteStage(ctx context.Context, project, name string) error {
+	if err := c.Do(ctx, "DeleteStage", map[string]string{"project": project, "name": name}, nil); err != nil {
+		return fmt.Errorf("deleting stage %q/%q: %w", project, name, err)
+	}
+	return nil
 }
