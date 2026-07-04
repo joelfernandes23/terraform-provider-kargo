@@ -31,7 +31,10 @@ CLUSTER_NAME  := kargo-dev
 KIND_CONFIG   := test/kind-config.yaml
 KARGO_VALUES  := test/kargo-values.yaml
 KARGO_CHART   := oci://ghcr.io/akuity/kargo-charts/kargo
-KARGO_VERSION := 1.9.5
+KARGO_VERSION ?=
+KARGO_VERSION_ARGS := $(if $(KARGO_VERSION),--version $(KARGO_VERSION),)
+CERT_MANAGER_VERSION ?= v1.20.3
+ARGOCD_VERSION ?= v3.4.4
 
 devenv-up: cluster cert-manager argocd kargo devenv-status ## Full local env setup
 
@@ -42,7 +45,7 @@ cluster: ## Create Kind cluster
 	@kubectl config use-context kind-$(CLUSTER_NAME)
 
 cert-manager: ## Install cert-manager
-	kubectl apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml
+	kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/$(CERT_MANAGER_VERSION)/cert-manager.yaml
 	kubectl wait --for=condition=Available deployment/cert-manager -n cert-manager --timeout=120s
 	kubectl wait --for=condition=Available deployment/cert-manager-webhook -n cert-manager --timeout=120s
 	kubectl wait --for=condition=Available deployment/cert-manager-cainjector -n cert-manager --timeout=120s
@@ -50,13 +53,12 @@ cert-manager: ## Install cert-manager
 argocd: ## Install ArgoCD (--server-side required: applicationsets CRD exceeds client-side annotation limit)
 	kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
 	kubectl apply -n argocd --server-side --force-conflicts \
-		-f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+		-f https://raw.githubusercontent.com/argoproj/argo-cd/$(ARGOCD_VERSION)/manifests/install.yaml
 	kubectl wait --for=condition=Available deployment/argocd-server -n argocd --timeout=300s
 
 kargo: ## Install Kargo via Helm (OCI registry)
 	kubectl create namespace kargo --dry-run=client -o yaml | kubectl apply -f -
-	helm upgrade --install kargo $(KARGO_CHART) \
-		--version $(KARGO_VERSION) \
+	helm upgrade --install kargo $(KARGO_CHART) $(KARGO_VERSION_ARGS) \
 		--namespace kargo \
 		--values $(KARGO_VALUES) \
 		--wait --timeout 300s
