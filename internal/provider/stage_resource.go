@@ -2,7 +2,9 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
 	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
@@ -188,34 +190,320 @@ func (r *StageResource) Configure(_ context.Context, req resource.ConfigureReque
 	r.client = c
 }
 
-func (r *StageResource) Create(_ context.Context, _ resource.CreateRequest, resp *resource.CreateResponse) {
-	resp.Diagnostics.AddError("Not implemented", "kargo_stage Create is not implemented yet.")
+func (r *StageResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
+	var data StageResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	spec, err := expandStageSpec(ctx, &data)
+	if err != nil {
+		resp.Diagnostics.AddError("Invalid stage configuration", err.Error())
+		return
+	}
+
+	stage, err := r.client.CreateStage(ctx, data.Project.ValueString(), data.Name.ValueString(), spec)
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to create stage", err.Error())
+		return
+	}
+	if stage == nil {
+		resp.Diagnostics.AddError("Failed to create stage", "Kargo returned no stage after creation.")
+		return
+	}
+
+	newData := flattenStage(ctx, data.Project.ValueString(), stage, &data)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &newData)...)
 }
 
-func (r *StageResource) Read(_ context.Context, _ resource.ReadRequest, resp *resource.ReadResponse) {
-	resp.Diagnostics.AddError("Not implemented", "kargo_stage Read is not implemented yet.")
+func (r *StageResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
+	var data StageResourceModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	stage, err := r.client.GetStage(ctx, data.Project.ValueString(), data.Name.ValueString())
+	if err != nil {
+		if client.IsNotFound(err) {
+			resp.State.RemoveResource(ctx)
+			return
+		}
+		resp.Diagnostics.AddError("Failed to read stage", err.Error())
+		return
+	}
+
+	if stage == nil {
+		// The stage is terminating (deletionTimestamp set) — treat as deleted.
+		resp.State.RemoveResource(ctx)
+		return
+	}
+
+	newData := flattenStage(ctx, data.Project.ValueString(), stage, &data)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &newData)...)
 }
 
-func (r *StageResource) Update(_ context.Context, _ resource.UpdateRequest, resp *resource.UpdateResponse) {
-	resp.Diagnostics.AddError("Not implemented", "kargo_stage Update is not implemented yet.")
+func (r *StageResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	var data StageResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	spec, err := expandStageSpec(ctx, &data)
+	if err != nil {
+		resp.Diagnostics.AddError("Invalid stage configuration", err.Error())
+		return
+	}
+
+	stage, err := r.client.UpdateStage(ctx, data.Project.ValueString(), data.Name.ValueString(), spec)
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to update stage", err.Error())
+		return
+	}
+	if stage == nil {
+		resp.Diagnostics.AddError("Failed to update stage", "Kargo returned no stage after update.")
+		return
+	}
+
+	newData := flattenStage(ctx, data.Project.ValueString(), stage, &data)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &newData)...)
 }
 
-func (r *StageResource) Delete(_ context.Context, _ resource.DeleteRequest, resp *resource.DeleteResponse) {
-	resp.Diagnostics.AddError("Not implemented", "kargo_stage Delete is not implemented yet.")
+func (r *StageResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
+	var data StageResourceModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if err := r.client.DeleteStage(ctx, data.Project.ValueString(), data.Name.ValueString()); err != nil {
+		// Kargo's DeleteStage propagates the k8s 404; ignore stages already gone.
+		if client.IsNotFound(err) {
+			return
+		}
+		resp.Diagnostics.AddError("Failed to delete stage", err.Error())
+	}
 }
 
-func (r *StageResource) ImportState(_ context.Context, _ resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	resp.Diagnostics.AddError("Not implemented", "kargo_stage import is not implemented yet.")
+func (r *StageResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	project, name, err := parseStageID(req.ID)
+	if err != nil {
+		resp.Diagnostics.AddError("Invalid stage import ID", err.Error())
+		return
+	}
+
+	stage, err := r.client.GetStage(ctx, project, name)
+	if err != nil {
+		if client.IsNotFound(err) {
+			resp.Diagnostics.AddError("Stage not found", fmt.Sprintf("Stage %q does not exist.", req.ID))
+			return
+		}
+		resp.Diagnostics.AddError("Failed to read stage", err.Error())
+		return
+	}
+	if stage == nil {
+		resp.Diagnostics.AddError("Stage not found", fmt.Sprintf("Stage %q does not exist.", req.ID))
+		return
+	}
+
+	data := flattenStage(ctx, project, stage, nil)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+func stageID(project, name string) string {
+	return project + "/" + name
 }
 
 func parseStageID(id string) (project, name string, err error) {
-	return id, "", fmt.Errorf("parseStageID not implemented")
+	project, name, ok := strings.Cut(id, "/")
+	if !ok || project == "" || name == "" || strings.Contains(name, "/") {
+		return "", "", fmt.Errorf("expected import ID in project/name format")
+	}
+	return project, name, nil
 }
 
-func expandStageSpec(_ context.Context, data *StageResourceModel) (client.StageSpec, error) {
-	return client.StageSpec{Shard: valueString(data.Shard)}, fmt.Errorf("expandStageSpec not implemented for stage %q", valueString(data.Name))
+func expandStageSpec(ctx context.Context, data *StageResourceModel) (client.StageSpec, error) {
+	if len(data.RequestedFreight) == 0 {
+		return client.StageSpec{}, fmt.Errorf("stage must have at least one requested_freight")
+	}
+
+	spec := client.StageSpec{
+		Shard:            valueString(data.Shard),
+		RequestedFreight: make([]client.FreightRequest, 0, len(data.RequestedFreight)),
+	}
+
+	seenOrigins := map[string]int{}
+	for i, freight := range data.RequestedFreight {
+		if freight.Origin == nil || valueString(freight.Origin.Name) == "" {
+			return client.StageSpec{}, fmt.Errorf("requested_freight %d origin.name must be set", i)
+		}
+		name := freight.Origin.Name.ValueString()
+
+		kind := valueString(freight.Origin.Kind)
+		if kind == "" {
+			kind = "Warehouse"
+		}
+
+		originKey := kind + "/" + name
+		if firstIdx, seen := seenOrigins[originKey]; seen {
+			return client.StageSpec{}, fmt.Errorf("requested_freight %d duplicates origin of requested_freight %d", i, firstIdx)
+		}
+		seenOrigins[originKey] = i
+
+		var direct bool
+		var stages []string
+		if freight.Sources != nil {
+			direct = freight.Sources.Direct.ValueBool()
+			if !freight.Sources.Stages.IsNull() && !freight.Sources.Stages.IsUnknown() {
+				if diags := freight.Sources.Stages.ElementsAs(ctx, &stages, false); diags.HasError() {
+					return client.StageSpec{}, fmt.Errorf("requested_freight %d has invalid sources.stages: %s", i, diags)
+				}
+			}
+		}
+		if !direct && len(stages) == 0 {
+			return client.StageSpec{}, fmt.Errorf("requested_freight %d sources must set direct = true or at least one stage", i)
+		}
+
+		spec.RequestedFreight = append(spec.RequestedFreight, client.FreightRequest{
+			Origin:  client.FreightOrigin{Kind: kind, Name: name},
+			Sources: client.FreightSources{Direct: direct, Stages: stages},
+		})
+	}
+
+	if data.PromotionTemplate != nil {
+		if len(data.PromotionTemplate.Step) == 0 {
+			// Defense in depth: the schema validator already enforces SizeAtLeast(1).
+			return client.StageSpec{}, fmt.Errorf("promotion_template must have at least one step")
+		}
+
+		steps := make([]client.PromotionStep, 0, len(data.PromotionTemplate.Step))
+		for j, step := range data.PromotionTemplate.Step {
+			if valueString(step.Uses) == "" {
+				return client.StageSpec{}, fmt.Errorf("promotion_template step %d uses must be set", j)
+			}
+			expanded := client.PromotionStep{
+				Uses: step.Uses.ValueString(),
+				As:   valueString(step.As),
+			}
+			if !step.Config.IsNull() && !step.Config.IsUnknown() {
+				expanded.Config = json.RawMessage(step.Config.ValueString())
+			}
+			steps = append(steps, expanded)
+		}
+		spec.PromotionTemplate = &client.PromotionTemplate{
+			Spec: client.PromotionTemplateSpec{Steps: steps},
+		}
+	}
+
+	return spec, nil
 }
 
-func flattenStage(_ context.Context, project string, _ *client.Stage, _ *StageResourceModel) StageResourceModel {
-	return StageResourceModel{Project: types.StringValue(project)}
+func flattenStage(ctx context.Context, project string, stage *client.Stage, prior *StageResourceModel) StageResourceModel {
+	resolvedProject := stage.Metadata.Namespace
+	if resolvedProject == "" {
+		resolvedProject = project
+	}
+
+	priorShard := types.StringValue("__import__")
+	if prior != nil {
+		priorShard = prior.Shard
+	}
+
+	data := StageResourceModel{
+		Project:          types.StringValue(resolvedProject),
+		Name:             types.StringValue(stage.Metadata.Name),
+		ID:               types.StringValue(stageID(resolvedProject, stage.Metadata.Name)),
+		Shard:            optionalStringValue(stage.Spec.Shard, priorShard),
+		RequestedFreight: make([]StageRequestedFreightModel, 0, len(stage.Spec.RequestedFreight)),
+	}
+
+	for i, freight := range stage.Spec.RequestedFreight {
+		var priorFreight *StageRequestedFreightModel
+		if prior != nil && i < len(prior.RequestedFreight) {
+			priorFreight = &prior.RequestedFreight[i]
+		}
+
+		priorKind := types.StringValue("__import__")
+		if priorFreight != nil {
+			priorKind = types.StringNull()
+			if priorFreight.Origin != nil {
+				priorKind = priorFreight.Origin.Kind
+			}
+		}
+
+		var priorSources *StageFreightSourcesModel
+		if priorFreight != nil {
+			priorSources = priorFreight.Sources
+		}
+
+		sources := &StageFreightSourcesModel{}
+		if priorSources != nil {
+			// Echo the planned sources unchanged: expand already validated them and
+			// the server round-trips direct/stages as sent.
+			sources.Direct = priorSources.Direct
+			sources.Stages = priorSources.Stages
+		} else {
+			sources.Direct = types.BoolNull()
+			if freight.Sources.Direct {
+				sources.Direct = types.BoolValue(true)
+			}
+			sources.Stages = types.ListNull(types.StringType)
+			if len(freight.Sources.Stages) > 0 {
+				// []string into a string list cannot produce diagnostics.
+				list, diags := types.ListValueFrom(ctx, types.StringType, freight.Sources.Stages)
+				if !diags.HasError() {
+					sources.Stages = list
+				}
+			}
+		}
+
+		data.RequestedFreight = append(data.RequestedFreight, StageRequestedFreightModel{
+			Origin: &StageFreightOriginModel{
+				Kind: optionalStringValue(freight.Origin.Kind, priorKind),
+				Name: types.StringValue(freight.Origin.Name),
+			},
+			Sources: sources,
+		})
+	}
+
+	if stage.Spec.PromotionTemplate != nil {
+		serverSteps := stage.Spec.PromotionTemplate.Spec.Steps
+		steps := make([]StageStepModel, 0, len(serverSteps))
+		for j, step := range serverSteps {
+			var priorStep *StageStepModel
+			if prior != nil && prior.PromotionTemplate != nil && j < len(prior.PromotionTemplate.Step) {
+				priorStep = &prior.PromotionTemplate.Step[j]
+			}
+
+			priorAs := types.StringValue("__import__")
+			if priorStep != nil {
+				priorAs = priorStep.As
+			}
+
+			steps = append(steps, StageStepModel{
+				Uses:   types.StringValue(step.Uses),
+				As:     optionalStringValue(step.As, priorAs),
+				Config: flattenStepConfig(step.Config, priorStep),
+			})
+		}
+		data.PromotionTemplate = &StagePromotionTemplateModel{Step: steps}
+	}
+
+	return data
+}
+
+// flattenStepConfig echoes the planned config bytes back to state so apply
+// results match the plan exactly; on import (prior == nil) it takes the server
+// value, and jsontypes.Normalized semantic equality keeps refreshes stable even
+// though the server re-serializes config with sorted keys.
+func flattenStepConfig(server json.RawMessage, prior *StageStepModel) jsontypes.Normalized {
+	if prior != nil {
+		return prior.Config
+	}
+	if len(server) == 0 {
+		return jsontypes.NewNormalizedNull()
+	}
+	return jsontypes.NewNormalizedValue(string(server))
 }
