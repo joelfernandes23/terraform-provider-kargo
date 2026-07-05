@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/joelfernandes23/terraform-provider-kargo/compare/v0.4.0...v0.4.1) (2026-07-05)
+
+
+### Miscellaneous
+
+* release 0.4.1 ([cda0fc8](https://github.com/joelfernandes23/terraform-provider-kargo/commit/cda0fc8ca91d79ffbbf023134660873b0c9203da))
+
 ## [0.4.0](https://github.com/joelfernandes23/terraform-provider-kargo/compare/v0.3.3...v0.4.0) (2026-07-05)
 
 
