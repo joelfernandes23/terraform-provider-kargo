@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -926,6 +927,69 @@ func TestAccStageResource_outOfBandDeletion(t *testing.T) {
 			},
 		},
 	})
+}
+
+// testStageLengthValidationError matches the LengthAtLeast(1) diagnostic for a
+// field; the CLI wraps diagnostics, so allow any whitespace between words.
+func testStageLengthValidationError(field string) *regexp.Regexp {
+	return regexp.MustCompile(field + `\s+string\s+length\s+must\s+be\s+at\s+least\s+1`)
+}
+
+// WR-02 regression gate: empty strings for optional attributes that omitempty
+// drops from the manifest must fail at validate time instead of producing
+// "Provider produced inconsistent result after apply" (shard, as) or apply-time
+// expand errors (origin.name, uses).
+func TestAccStageResource_rejectsEmptyStrings(t *testing.T) {
+	srv := testStageServer(t)
+	defer srv.Close()
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{
+				Config:      testStageValidationConfig(srv.URL, "", "app", "git-clone", "clone"),
+				ExpectError: testStageLengthValidationError(`shard`),
+			},
+			{
+				Config:      testStageValidationConfig(srv.URL, "eu-west", "", "git-clone", "clone"),
+				ExpectError: testStageLengthValidationError(`origin\.name`),
+			},
+			{
+				Config:      testStageValidationConfig(srv.URL, "eu-west", "app", "", "clone"),
+				ExpectError: testStageLengthValidationError(`uses`),
+			},
+			{
+				Config:      testStageValidationConfig(srv.URL, "eu-west", "app", "git-clone", ""),
+				ExpectError: testStageLengthValidationError(`as`),
+			},
+		},
+	})
+}
+
+func testStageValidationConfig(url, shard, originName, uses, as string) string {
+	return fmt.Sprintf(`%s
+resource "kargo_stage" "test" {
+  project = "tf-test-project"
+  name    = "tf-test-stage"
+  shard   = %q
+
+  requested_freight {
+    origin {
+      name = %q
+    }
+    sources {
+      direct = true
+    }
+  }
+
+  promotion_template {
+    step {
+      uses = %q
+      as   = %q
+    }
+  }
+}
+`, testStageProviderConfig(url), shard, originName, uses, as)
 }
 
 func TestAccStageResource_outOfBandDrift(t *testing.T) {

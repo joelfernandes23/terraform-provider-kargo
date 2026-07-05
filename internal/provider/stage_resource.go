@@ -99,6 +99,11 @@ func (r *StageResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 			"shard": schema.StringAttribute{
 				Optional:    true,
 				Description: "Shard that the stage belongs to. Kargo syncs this to the kargo.akuity.io/shard label.",
+				// Empty strings are indistinguishable from omitted on the wire
+				// (omitempty) and would produce an inconsistent result after apply.
+				Validators: []validator.String{
+					stringvalidator.LengthAtLeast(1),
+				},
 			},
 		},
 		Blocks: map[string]schema.Block{
@@ -122,6 +127,9 @@ func (r *StageResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 								"name": schema.StringAttribute{
 									Optional:    true,
 									Description: "Name of the origin warehouse. Required.",
+									Validators: []validator.String{
+										stringvalidator.LengthAtLeast(1),
+									},
 								},
 							},
 						},
@@ -155,10 +163,19 @@ func (r *StageResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 								"uses": schema.StringAttribute{
 									Optional:    true,
 									Description: "Name of the promotion step runner (for example git-clone). Required.",
+									Validators: []validator.String{
+										stringvalidator.LengthAtLeast(1),
+									},
 								},
 								"as": schema.StringAttribute{
 									Optional:    true,
 									Description: "Alias for referencing this step's output.",
+									// Empty strings are indistinguishable from omitted on the
+									// wire (omitempty) and would produce an inconsistent
+									// result after apply.
+									Validators: []validator.String{
+										stringvalidator.LengthAtLeast(1),
+									},
 								},
 								"config": schema.StringAttribute{
 									Optional:    true,
