@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/joelfernandes23/terraform-provider-kargo/compare/v0.3.3...v0.4.0) (2026-07-05)
+
+
+### Features
+
+* add kargo_stage resource ([#22](https://github.com/joelfernandes23/terraform-provider-kargo/issues/22)) ([40e0495](https://github.com/joelfernandes23/terraform-provider-kargo/commit/40e04951ba3de093c93de5a56465dd51b9140405))
+
+
+### Dependencies
+
+* bump the go-minor-and-patch group with 2 updates ([#20](https://github.com/joelfernandes23/terraform-provider-kargo/issues/20)) ([99276d9](https://github.com/joelfernandes23/terraform-provider-kargo/commit/99276d9c1d32489c58c7ef8cb6f38059a88970d4))
+
 ## [0.3.3](https://github.com/joelfernandes23/terraform-provider-kargo/compare/v0.3.2...v0.3.3) (2026-05-11)
 
 
