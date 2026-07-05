@@ -1,0 +1,34 @@
+---
+page_title: "kargo_stage Resource - Kargo"
+subcategory: ""
+description: |-
+  Manages a Kargo stage. A stage requests Freight and promotes it through user-defined steps.
+---
+
+# kargo_stage (Resource)
+
+Manages a Kargo Stage within a Kargo Project. Stages form the promotion pipeline: each Stage requests Freight — either directly from a Warehouse or from upstream Stages — and promotes it by running the steps in its promotion template.
+
+Updating freight requests or promotion steps changes the Stage in place. Changing `project` or `name` requires replacement because those fields identify the Kargo object.
+
+## Example Usage
+
+{{ tffile "examples/resources/kargo_stage/resource.tf" }}
+
+## Freight Requests
+
+Each `requested_freight` block names an origin (a Warehouse by default) and where Freight may come from: `sources.direct = true` accepts Freight straight from the Warehouse, while `sources.stages` lists upstream Stages that must have verified the Freight first. Chain Stages by referencing the upstream Stage's `name` to build a pipeline such as test → staging → prod.
+
+## Promotion Steps
+
+Each `step` in `promotion_template` runs a Kargo promotion step (`git-clone`, `helm-update-image`, `argocd-update`, and so on). Step `config` is a JSON string — compared semantically, so re-ordering keys never produces a diff. Reference credentials and secrets by Kargo secret name or expression inside `config`; never inline secret values, as step config is stored in Terraform state.
+
+## Import
+
+Import an existing Stage with `project/name`:
+
+```shell
+terraform import kargo_stage.example example-project/staging
+```
+
+{{ .SchemaMarkdown | trimspace }}
