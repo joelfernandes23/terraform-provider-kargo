@@ -83,6 +83,18 @@ func TestCreateWarehouse(t *testing.T) {
 		_, err := c.CreateWarehouse(context.Background(), "demo", "dup", WarehouseSpec{})
 		assertErrorContains(t, err, "creating warehouse")
 	})
+
+	t.Run("result error", func(t *testing.T) {
+		c, srv := testClientWithServer(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"results":[{"error":"webhook denied"}]}`))
+		})
+		defer srv.Close()
+
+		_, err := c.CreateWarehouse(context.Background(), "demo", "app", WarehouseSpec{})
+		assertErrorContains(t, err, "creating warehouse")
+		assertErrorContains(t, err, "webhook denied")
+	})
 }
 
 func TestGetWarehouse(t *testing.T) {
@@ -194,6 +206,15 @@ func TestWarehouseProtobufInt64Decoding(t *testing.T) {
 			}
 		})
 	}
+
+	// Malformed quoted input never reaches UnmarshalJSON via json.Unmarshal
+	// (syntax is validated first), so call the method directly.
+	t.Run("malformed quoted input", func(t *testing.T) {
+		var value ProtobufInt64
+		if err := value.UnmarshalJSON([]byte(`"broken`)); err == nil {
+			t.Fatal("expected error")
+		}
+	})
 }
 
 func TestKargoTimeDecoding(t *testing.T) {
@@ -208,6 +229,7 @@ func TestKargoTimeDecoding(t *testing.T) {
 		{name: "object", raw: `{"seconds":"1714521600","nanos":500000000}`, want: "2024-05-01T00:00:00.5Z"},
 		{name: "object without seconds", raw: `{}`},
 		{name: "invalid object", raw: `{"seconds":"soon"}`, wantErr: true},
+		{name: "not an object", raw: `[]`, wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -224,6 +246,15 @@ func TestKargoTimeDecoding(t *testing.T) {
 			assertEqual(t, tt.want, value.String())
 		})
 	}
+
+	// Malformed quoted input never reaches UnmarshalJSON via json.Unmarshal
+	// (syntax is validated first), so call the method directly.
+	t.Run("malformed quoted input", func(t *testing.T) {
+		var value KargoTime
+		if err := value.UnmarshalJSON([]byte(`"broken`)); err == nil {
+			t.Fatal("expected error")
+		}
+	})
 }
 
 func TestKargoDurationDecoding(t *testing.T) {
@@ -238,6 +269,7 @@ func TestKargoDurationDecoding(t *testing.T) {
 		{name: "object", raw: `{"duration":"3600000000000"}`, want: "1h0m0s"},
 		{name: "object without duration", raw: `{}`},
 		{name: "invalid object", raw: `{"duration":"later"}`, wantErr: true},
+		{name: "not an object", raw: `[]`, wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -254,6 +286,15 @@ func TestKargoDurationDecoding(t *testing.T) {
 			assertEqual(t, tt.want, value.String())
 		})
 	}
+
+	// Malformed quoted input never reaches UnmarshalJSON via json.Unmarshal
+	// (syntax is validated first), so call the method directly.
+	t.Run("malformed quoted input", func(t *testing.T) {
+		var value KargoDuration
+		if err := value.UnmarshalJSON([]byte(`"broken`)); err == nil {
+			t.Fatal("expected error")
+		}
+	})
 }
 
 func TestListWarehouseFreight(t *testing.T) {
@@ -387,6 +428,17 @@ func TestUpdateWarehouse(t *testing.T) {
 
 		_, err := c.UpdateWarehouse(context.Background(), "demo", "app", WarehouseSpec{})
 		assertErrorContains(t, err, "no result returned")
+	})
+
+	t.Run("API error", func(t *testing.T) {
+		c, srv := testClientWithServer(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"code":"internal","message":"boom"}`))
+		})
+		defer srv.Close()
+
+		_, err := c.UpdateWarehouse(context.Background(), "demo", "app", WarehouseSpec{})
+		assertErrorContains(t, err, "updating warehouse")
 	})
 }
 

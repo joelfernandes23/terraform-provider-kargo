@@ -1,0 +1,50 @@
+{
+  "apiVersion": "kargo.akuity.io/v1alpha1",
+  "kind": "Stage",
+  "metadata": {
+    "name": "staging",
+    "namespace": "demo",
+    "uid": "8f7c1a2e-0000-0000-0000-000000000001",
+    "resourceVersion": "42",
+    "creationTimestamp": "2026-07-01T10:00:00Z",
+    "annotations": {"kargo.akuity.io/description": "staging stage"},
+    "labels": {"kargo.akuity.io/shard": "eu-west"}
+  },
+  "spec": {
+    "shard": "eu-west",
+    "requestedFreight": [
+      {
+        "origin": {"kind": "Warehouse", "name": "app"},
+        "sources": {"stages": ["test"]}
+      }
+    ],
+    "promotionTemplate": {
+      "spec": {
+        "steps": [
+          {
+            "uses": "git-clone",
+            "as": "clone",
+            "config": {
+              "repoURL": "https://github.com/example/repo.git",
+              "checkout": [{"branch": "main", "path": "./src"}]
+            }
+          },
+          {
+            "uses": "argocd-update",
+            "config": {
+              "apps": [{"name": "app-staging"}],
+              "retries": 3,
+              "wait": true
+            }
+          }
+        ]
+      }
+    }
+  },
+  "status": {
+    "phase": "Steady",
+    "observedGeneration": 7,
+    "health": {"status": "Healthy"},
+    "lastPromotion": {"name": "staging.01hxyz.abcdef", "finishedAt": "2026-07-02T09:30:00Z"}
+  }
+}
