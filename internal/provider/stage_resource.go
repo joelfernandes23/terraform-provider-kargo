@@ -438,25 +438,33 @@ func flattenStage(ctx context.Context, project string, stage *client.Stage, prio
 			priorSources = priorFreight.Sources
 		}
 
-		sources := &StageFreightSourcesModel{}
-		if priorSources != nil {
-			// Echo the planned sources unchanged: expand already validated them and
-			// the server round-trips direct/stages as sent.
+		// Take the server's sources so refresh surfaces out-of-band edits as
+		// drift, falling back to prior state only where the wire format cannot
+		// distinguish a planned zero value from an omitted field (omitempty drops
+		// both direct: false and empty stages from the manifest).
+		sources := &StageFreightSourcesModel{
+			Direct: types.BoolNull(),
+			Stages: types.ListNull(types.StringType),
+		}
+		if freight.Sources.Direct {
+			sources.Direct = types.BoolValue(true)
+		} else if priorSources != nil && !priorSources.Direct.ValueBool() {
+			// Absent on the wire: preserve the planned false-vs-null distinction.
+			// A prior true with the server reporting absent is genuine drift and
+			// falls through to null so the plan shows it.
 			sources.Direct = priorSources.Direct
+		}
+		if len(freight.Sources.Stages) > 0 {
+			// []string into a string list cannot produce diagnostics.
+			list, diags := types.ListValueFrom(ctx, types.StringType, freight.Sources.Stages)
+			if !diags.HasError() {
+				sources.Stages = list
+			}
+		} else if priorSources != nil && len(priorSources.Stages.Elements()) == 0 {
+			// Absent on the wire: preserve the planned empty-vs-null distinction.
+			// A prior non-empty list with the server reporting none is genuine
+			// drift and falls through to null so the plan shows it.
 			sources.Stages = priorSources.Stages
-		} else {
-			sources.Direct = types.BoolNull()
-			if freight.Sources.Direct {
-				sources.Direct = types.BoolValue(true)
-			}
-			sources.Stages = types.ListNull(types.StringType)
-			if len(freight.Sources.Stages) > 0 {
-				// []string into a string list cannot produce diagnostics.
-				list, diags := types.ListValueFrom(ctx, types.StringType, freight.Sources.Stages)
-				if !diags.HasError() {
-					sources.Stages = list
-				}
-			}
 		}
 
 		data.RequestedFreight = append(data.RequestedFreight, StageRequestedFreightModel{
@@ -485,7 +493,7 @@ func flattenStage(ctx context.Context, project string, stage *client.Stage, prio
 			steps = append(steps, StageStepModel{
 				Uses:   types.StringValue(step.Uses),
 				As:     optionalStringValue(step.As, priorAs),
-				Config: flattenStepConfig(step.Config, priorStep),
+				Config: flattenStepConfig(step.Config),
 			})
 		}
 		data.PromotionTemplate = &StagePromotionTemplateModel{Step: steps}
@@ -494,14 +502,12 @@ func flattenStage(ctx context.Context, project string, stage *client.Stage, prio
 	return data
 }
 
-// flattenStepConfig echoes the planned config bytes back to state so apply
-// results match the plan exactly; on import (prior == nil) it takes the server
-// value, and jsontypes.Normalized semantic equality keeps refreshes stable even
-// though the server re-serializes config with sorted keys.
-func flattenStepConfig(server json.RawMessage, prior *StageStepModel) jsontypes.Normalized {
-	if prior != nil {
-		return prior.Config
-	}
+// flattenStepConfig returns the server's config bytes so refresh surfaces
+// out-of-band edits as drift. jsontypes.Normalized semantic equality keeps
+// apply and refresh stable even though the server re-serializes config with
+// sorted keys: the framework preserves the plan/prior value whenever the
+// returned value is semantically equal JSON.
+func flattenStepConfig(server json.RawMessage) jsontypes.Normalized {
 	if len(server) == 0 {
 		return jsontypes.NewNormalizedNull()
 	}

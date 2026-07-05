@@ -314,8 +314,12 @@ func TestExpandStageSpecMapsStepConfig(t *testing.T) {
 	}
 }
 
-func TestFlattenStagePreservesPlannedConfig(t *testing.T) {
-	plannedConfig := `{"b":1,"a":2}`
+// flattenStage must return the server's config bytes even when prior state
+// exists so out-of-band edits surface as drift; the framework's
+// jsontypes.Normalized semantic equality (not a prior-state echo) is what
+// keeps plans stable against the server's key re-sorting.
+func TestFlattenStageReturnsServerConfig(t *testing.T) {
+	serverConfig := `{"a":2,"b":1}`
 	prior := &StageResourceModel{
 		Project: types.StringValue("demo"),
 		Name:    types.StringValue("staging"),
@@ -327,7 +331,7 @@ func TestFlattenStagePreservesPlannedConfig(t *testing.T) {
 		PromotionTemplate: &StagePromotionTemplateModel{Step: []StageStepModel{{
 			Uses:   types.StringValue("git-clone"),
 			As:     types.StringNull(),
-			Config: jsontypes.NewNormalizedValue(plannedConfig),
+			Config: jsontypes.NewNormalizedValue(`{"b":1,"a":2}`),
 		}}},
 	}
 	stage := &client.Stage{
@@ -339,7 +343,7 @@ func TestFlattenStagePreservesPlannedConfig(t *testing.T) {
 			}},
 			PromotionTemplate: &client.PromotionTemplate{Spec: client.PromotionTemplateSpec{Steps: []client.PromotionStep{{
 				Uses:   "git-clone",
-				Config: json.RawMessage(`{"a":2,"b":1}`),
+				Config: json.RawMessage(serverConfig),
 			}}}},
 		},
 	}
@@ -348,9 +352,86 @@ func TestFlattenStagePreservesPlannedConfig(t *testing.T) {
 	if flattened.PromotionTemplate == nil || len(flattened.PromotionTemplate.Step) != 1 {
 		t.Fatalf("expected one promotion template step, got %+v", flattened.PromotionTemplate)
 	}
-	if got := flattened.PromotionTemplate.Step[0].Config.ValueString(); got != plannedConfig {
-		t.Errorf("expected planned config %s echoed to state, got %s", plannedConfig, got)
+	if got := flattened.PromotionTemplate.Step[0].Config.ValueString(); got != serverConfig {
+		t.Errorf("expected server config %s in state, got %s", serverConfig, got)
 	}
+}
+
+// flattenStage must reflect out-of-band edits to sources in state so refresh
+// produces drift, while still preserving prior state for the zero values the
+// wire format cannot round-trip (direct false and empty stages are dropped by
+// omitempty).
+func TestFlattenStageSourcesDriftAndAmbiguity(t *testing.T) {
+	buildPrior := func(direct types.Bool, stages types.List) *StageResourceModel {
+		return &StageResourceModel{
+			Project: types.StringValue("demo"),
+			Name:    types.StringValue("staging"),
+			Shard:   types.StringNull(),
+			RequestedFreight: []StageRequestedFreightModel{{
+				Origin:  &StageFreightOriginModel{Kind: types.StringNull(), Name: types.StringValue("app")},
+				Sources: &StageFreightSourcesModel{Direct: direct, Stages: stages},
+			}},
+		}
+	}
+	buildStage := func(sources client.FreightSources) *client.Stage {
+		return &client.Stage{
+			Metadata: client.StageMetadata{Name: "staging", Namespace: "demo"},
+			Spec: client.StageSpec{
+				RequestedFreight: []client.FreightRequest{{
+					Origin:  client.FreightOrigin{Kind: "Warehouse", Name: "app"},
+					Sources: sources,
+				}},
+			},
+		}
+	}
+	flattenSources := func(t *testing.T, stage *client.Stage, prior *StageResourceModel) *StageFreightSourcesModel {
+		t.Helper()
+		data := flattenStage(context.Background(), "demo", stage, prior)
+		if len(data.RequestedFreight) != 1 || data.RequestedFreight[0].Sources == nil {
+			t.Fatalf("expected 1 requested freight with sources, got %+v", data.RequestedFreight)
+		}
+		return data.RequestedFreight[0].Sources
+	}
+
+	t.Run("out_of_band_stages_edit_reaches_state", func(t *testing.T) {
+		prior := buildPrior(types.BoolNull(), testStageStringList(t, "test"))
+		sources := flattenSources(t, buildStage(client.FreightSources{Stages: []string{"qa"}}), prior)
+
+		var stages []string
+		if diags := sources.Stages.ElementsAs(context.Background(), &stages, false); diags.HasError() {
+			t.Fatalf("reading stages: %s", diags)
+		}
+		if !reflect.DeepEqual(stages, []string{"qa"}) {
+			t.Errorf("expected out-of-band stages [qa] in state, got %v", stages)
+		}
+	})
+
+	t.Run("out_of_band_direct_removal_reaches_state", func(t *testing.T) {
+		prior := buildPrior(types.BoolValue(true), types.ListNull(types.StringType))
+		sources := flattenSources(t, buildStage(client.FreightSources{Stages: []string{"qa"}}), prior)
+
+		if !sources.Direct.IsNull() {
+			t.Errorf("expected direct true removed on server to drift to null, got %s", sources.Direct)
+		}
+	})
+
+	t.Run("planned_direct_false_preserved", func(t *testing.T) {
+		prior := buildPrior(types.BoolValue(false), testStageStringList(t, "test"))
+		sources := flattenSources(t, buildStage(client.FreightSources{Stages: []string{"test"}}), prior)
+
+		if sources.Direct.IsNull() || sources.Direct.ValueBool() {
+			t.Errorf("expected planned direct=false preserved against omitempty, got %s", sources.Direct)
+		}
+	})
+
+	t.Run("planned_empty_stages_preserved", func(t *testing.T) {
+		prior := buildPrior(types.BoolValue(true), testStageStringList(t))
+		sources := flattenSources(t, buildStage(client.FreightSources{Direct: true}), prior)
+
+		if sources.Stages.IsNull() || len(sources.Stages.Elements()) != 0 {
+			t.Errorf("expected planned empty stages preserved against omitempty, got %s", sources.Stages)
+		}
+	})
 }
 
 func TestFlattenStageImport(t *testing.T) {
@@ -618,6 +699,14 @@ func (s *stageTestServer) deleteStageForTest(key string) {
 	delete(s.stages, key)
 }
 
+// mutateStageForTest applies an out-of-band edit to a stored stage manifest,
+// emulating a kubectl edit that bypasses Terraform.
+func (s *stageTestServer) mutateStageForTest(key string, mutate func(stage map[string]any)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	mutate(s.stages[key])
+}
+
 func (s *stageTestServer) updateCountForTest() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -837,6 +926,83 @@ func TestAccStageResource_outOfBandDeletion(t *testing.T) {
 			},
 		},
 	})
+}
+
+func TestAccStageResource_outOfBandDrift(t *testing.T) {
+	srv := testStageServer(t)
+	defer srv.Close()
+
+	config := testStageDriftConfig(srv.URL)
+	key := "tf-test-project/tf-test-stage"
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("kargo_stage.test", "requested_freight.0.sources.stages.0", "test"),
+					resource.TestCheckResourceAttr("kargo_stage.test", "promotion_template.step.0.config", `{"retries":3}`),
+				),
+			},
+			{
+				// WR-01 regression gate: kubectl-style edits to sources.stages and
+				// step config must reach state on refresh and produce a plan.
+				PreConfig: func() {
+					srv.mutateStageForTest(key, func(stage map[string]any) {
+						spec := stage["spec"].(map[string]any)
+						freight := spec["requestedFreight"].([]any)[0].(map[string]any)
+						freight["sources"].(map[string]any)["stages"] = []any{"qa"}
+						template := spec["promotionTemplate"].(map[string]any)["spec"].(map[string]any)
+						step := template["steps"].([]any)[0].(map[string]any)
+						step["config"] = map[string]any{"retries": 99}
+					})
+				},
+				RefreshState:       true,
+				ExpectNonEmptyPlan: true,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("kargo_stage.test", "requested_freight.0.sources.stages.0", "qa"),
+					resource.TestCheckResourceAttr("kargo_stage.test", "promotion_template.step.0.config", `{"retries":99}`),
+				),
+			},
+			{
+				// Applying the same config reconciles the remote drift.
+				Config: config,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("kargo_stage.test", "requested_freight.0.sources.stages.0", "test"),
+					resource.TestCheckResourceAttr("kargo_stage.test", "promotion_template.step.0.config", `{"retries":3}`),
+					testCheckStageUpdateCountAtLeast(srv, 1),
+				),
+			},
+		},
+	})
+}
+
+func testStageDriftConfig(url string) string {
+	return fmt.Sprintf(`%s
+resource "kargo_stage" "test" {
+  project = "tf-test-project"
+  name    = "tf-test-stage"
+
+  requested_freight {
+    origin {
+      name = "app"
+    }
+    sources {
+      stages = ["test"]
+    }
+  }
+
+  promotion_template {
+    step {
+      uses = "argocd-update"
+      config = jsonencode({
+        retries = 3
+      })
+    }
+  }
+}
+`, testStageProviderConfig(url))
 }
 
 func TestAccStageResource_multiStage(t *testing.T) {
