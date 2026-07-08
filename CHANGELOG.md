@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/joelfernandes23/terraform-provider-kargo/compare/v0.4.1...v0.5.0) (2026-07-08)
+
+
+### Features
+
+* add kargo_stage data source ([#27](https://github.com/joelfernandes23/terraform-provider-kargo/issues/27)) ([3956595](https://github.com/joelfernandes23/terraform-provider-kargo/commit/3956595e1973f8cc6200cc2c34453f5dc22c9bd3))
+
 ## [0.4.1](https://github.com/joelfernandes23/terraform-provider-kargo/compare/v0.4.0...v0.4.1) (2026-07-05)
 
 
