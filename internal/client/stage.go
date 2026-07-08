@@ -19,6 +19,7 @@ type StageMetadata struct {
 type Stage struct {
 	Metadata StageMetadata `json:"metadata"`
 	Spec     StageSpec     `json:"spec,omitempty"`
+	Status   StageStatus   `json:"status,omitempty"`
 }
 
 type StageSpec struct {
@@ -49,6 +50,59 @@ type PromotionStep struct {
 	Uses   string          `json:"uses,omitempty"`
 	As     string          `json:"as,omitempty"`
 	Config json.RawMessage `json:"config,omitempty"`
+}
+
+// StageStatus models the raw-manifest status block, which is standard k8s JSON
+// (plain int64, RFC3339 strings) — no custom unmarshalers needed.
+type StageStatus struct {
+	Conditions           []StageCondition         `json:"conditions,omitempty"`
+	LastHandledRefresh   string                   `json:"lastHandledRefresh,omitempty"`
+	FreightHistory       []StageFreightCollection `json:"freightHistory,omitempty"`
+	FreightSummary       string                   `json:"freightSummary,omitempty"`
+	Health               *StageHealth             `json:"health,omitempty"`
+	ObservedGeneration   int64                    `json:"observedGeneration,omitempty"`
+	LastPromotion        *StagePromotionReference `json:"lastPromotion,omitempty"`
+	AutoPromotionEnabled bool                     `json:"autoPromotionEnabled,omitempty"`
+	// currentPromotion, metadata, health.config/output, verificationHistory
+	// deliberately unmodeled: opaque or ephemeral server-controlled JSON that
+	// must never round-trip into Terraform state (see plan threat T-10-01/T-10-02).
+}
+
+type StageCondition struct {
+	Type               string `json:"type"`
+	Status             string `json:"status"`
+	Reason             string `json:"reason,omitempty"`
+	Message            string `json:"message,omitempty"`
+	LastTransitionTime string `json:"lastTransitionTime,omitempty"`
+}
+
+type StageHealth struct {
+	Status string   `json:"status,omitempty"`
+	Issues []string `json:"issues,omitempty"`
+}
+
+type StageFreightCollection struct {
+	ID    string                           `json:"id"`
+	Items map[string]StageFreightReference `json:"items,omitempty"` // key: "Warehouse/<name>"
+}
+
+type StageFreightReference struct {
+	Name      string              `json:"name,omitempty"`
+	Origin    FreightOrigin       `json:"origin,omitempty"`
+	Commits   []GitCommit         `json:"commits,omitempty"`
+	Images    []Image             `json:"images,omitempty"`
+	Charts    []Chart             `json:"charts,omitempty"`
+	Artifacts []ArtifactReference `json:"artifacts,omitempty"`
+}
+
+type StagePromotionReference struct {
+	Name       string                `json:"name"`
+	FinishedAt string                `json:"finishedAt,omitempty"`
+	Status     *StagePromotionStatus `json:"status,omitempty"`
+}
+
+type StagePromotionStatus struct {
+	Phase string `json:"phase,omitempty"`
 }
 
 // GetStage returns (nil, nil) when the Stage exists but is being deleted.

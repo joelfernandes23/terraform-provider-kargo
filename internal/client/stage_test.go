@@ -51,6 +51,87 @@ func TestGetStage(t *testing.T) {
 		if !ok || repoURL != "https://github.com/example/repo.git" {
 			t.Errorf("expected inline config repoURL, got %#v", cfg["repoURL"])
 		}
+
+		// Status decode: the raw path carries standard k8s JSON, and unmodeled
+		// fields (health.config/output, verificationHistory, per-condition
+		// observedGeneration) in the fixture must be silently ignored.
+		if s.Status.Health == nil {
+			t.Fatal("expected status.health to be populated")
+		}
+		assertEqual(t, "Healthy", s.Status.Health.Status)
+		if issues := s.Status.Health.Issues; len(issues) != 1 || issues[0] != "example issue" {
+			t.Errorf("expected health issues [example issue], got %#v", issues)
+		}
+		assertEqual(t, "1/1 Fulfilled", s.Status.FreightSummary)
+		if !s.Status.AutoPromotionEnabled {
+			t.Error("expected autoPromotionEnabled true")
+		}
+		assertEqual(t, "refresh-1", s.Status.LastHandledRefresh)
+		if s.Status.ObservedGeneration != 0 {
+			t.Errorf("expected zero observedGeneration (top-level field absent in fixture), got %d", s.Status.ObservedGeneration)
+		}
+		if len(s.Status.Conditions) != 1 {
+			t.Fatalf("expected 1 condition, got %d", len(s.Status.Conditions))
+		}
+		assertEqual(t, "Ready", s.Status.Conditions[0].Type)
+		assertEqual(t, "Healthy", s.Status.Conditions[0].Reason)
+		if len(s.Status.FreightHistory) != 1 {
+			t.Fatalf("expected 1 freight collection, got %d", len(s.Status.FreightHistory))
+		}
+		assertEqual(t, "abc123def456", s.Status.FreightHistory[0].ID)
+		freight, ok := s.Status.FreightHistory[0].Items["Warehouse/app"]
+		if !ok {
+			t.Fatalf("expected freight item keyed Warehouse/app, got %#v", s.Status.FreightHistory[0].Items)
+		}
+		assertEqual(t, "freight-1", freight.Name)
+		assertEqual(t, "deadbeef", freight.Commits[0].ID)
+		assertEqual(t, "1.2.3", freight.Images[0].Tag)
+		assertEqual(t, "1.2.3", freight.Charts[0].Version)
+		assertEqual(t, "v1", freight.Artifacts[0].Version)
+		if s.Status.LastPromotion == nil {
+			t.Fatal("expected status.lastPromotion to be populated")
+		}
+		assertEqual(t, "staging.01hxyz.abcdef", s.Status.LastPromotion.Name)
+		assertEqual(t, "2026-07-02T09:30:00Z", s.Status.LastPromotion.FinishedAt)
+		if s.Status.LastPromotion.Status == nil {
+			t.Fatal("expected lastPromotion.status to be populated")
+		}
+		assertEqual(t, "Succeeded", s.Status.LastPromotion.Status.Phase)
+	})
+
+	t.Run("sparse_status", func(t *testing.T) {
+		// Fresh, never-promoted stage: status carries only conditions + freightSummary.
+		manifest := []byte(`{"metadata":{"name":"fresh","namespace":"demo"},"spec":{"requestedFreight":[{"origin":{"kind":"Warehouse","name":"app"},"sources":{"direct":true}}]},"status":{"conditions":[{"type":"Ready","status":"False","reason":"NoFreight","lastTransitionTime":"2026-07-05T13:23:57Z"}],"freightSummary":"0/1 Fulfilled"}}`)
+		c, srv := testClientWithServer(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			assertNoError(t, json.NewEncoder(w).Encode(map[string]string{
+				"raw": base64.StdEncoding.EncodeToString(manifest),
+			}))
+		})
+		defer srv.Close()
+
+		s, err := c.GetStage(context.Background(), "demo", "fresh")
+		assertNoError(t, err)
+		if s.Status.Health != nil {
+			t.Errorf("expected nil health on fresh stage, got %#v", s.Status.Health)
+		}
+		if len(s.Status.FreightHistory) != 0 {
+			t.Errorf("expected empty freight history, got %#v", s.Status.FreightHistory)
+		}
+		if s.Status.LastPromotion != nil {
+			t.Errorf("expected nil lastPromotion, got %#v", s.Status.LastPromotion)
+		}
+		if s.Status.ObservedGeneration != 0 {
+			t.Errorf("expected zero observedGeneration, got %d", s.Status.ObservedGeneration)
+		}
+		if s.Status.AutoPromotionEnabled {
+			t.Error("expected autoPromotionEnabled false")
+		}
+		assertEqual(t, "0/1 Fulfilled", s.Status.FreightSummary)
+		if len(s.Status.Conditions) != 1 {
+			t.Fatalf("expected 1 condition, got %d", len(s.Status.Conditions))
+		}
+		assertEqual(t, "NoFreight", s.Status.Conditions[0].Reason)
 	})
 
 	t.Run("deleting", func(t *testing.T) {

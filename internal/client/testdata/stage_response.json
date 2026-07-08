@@ -42,9 +42,39 @@
     }
   },
   "status": {
-    "phase": "Steady",
-    "observedGeneration": 7,
-    "health": {"status": "Healthy"},
-    "lastPromotion": {"name": "staging.01hxyz.abcdef", "finishedAt": "2026-07-02T09:30:00Z"}
+    "autoPromotionEnabled": true,
+    "conditions": [
+      {"type": "Ready", "status": "True", "reason": "Healthy", "message": "Stage is healthy and ready", "observedGeneration": 7, "lastTransitionTime": "2026-07-02T09:30:00Z"}
+    ],
+    "freightHistory": [
+      {
+        "id": "abc123def456",
+        "items": {
+          "Warehouse/app": {
+            "name": "freight-1",
+            "origin": {"kind": "Warehouse", "name": "app"},
+            "commits": [{"repoURL": "https://github.com/example/repo.git", "id": "deadbeef", "branch": "main", "tag": "v1.2.3", "message": "Release v1.2.3", "author": "Ada Example", "committer": "CI Example"}],
+            "images": [{"repoURL": "ghcr.io/example/app", "tag": "1.2.3", "digest": "sha256:abc"}],
+            "charts": [{"repoURL": "https://charts.example.com", "name": "app", "version": "1.2.3"}],
+            "artifacts": [{"artifactType": "application/example", "subscriptionName": "bundle", "version": "v1"}]
+          }
+        },
+        "verificationHistory": [{"id": "verif-1", "phase": "Successful", "startTime": "2026-07-01T10:00:00Z"}]
+      }
+    ],
+    "freightSummary": "1/1 Fulfilled",
+    "health": {
+      "status": "Healthy",
+      "issues": ["example issue"],
+      "config": {"checks": [{"kind": "app"}]},
+      "output": [{"applicationStatus": {"health": {"status": "Healthy"}, "sync": {"status": "Synced"}}}]
+    },
+    "lastHandledRefresh": "refresh-1",
+    "lastPromotion": {
+      "name": "staging.01hxyz.abcdef",
+      "finishedAt": "2026-07-02T09:30:00Z",
+      "freight": {"name": "freight-1", "origin": {"kind": "Warehouse", "name": "app"}},
+      "status": {"phase": "Succeeded", "finishedAt": "2026-07-02T09:30:00Z"}
+    }
   }
 }
