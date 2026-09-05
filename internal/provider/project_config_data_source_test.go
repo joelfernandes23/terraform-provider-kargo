@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/joelfernandes23/terraform-provider-kargo/internal/client"
 )
 
 func TestProjectConfigDataSourceSchema(t *testing.T) {
@@ -25,6 +26,34 @@ func TestProjectConfigDataSourceSchema(t *testing.T) {
 	}
 	if diags := resp.Schema.ValidateImplementation(context.Background()); diags.HasError() {
 		t.Fatalf("invalid schema implementation: %s", diags)
+	}
+}
+
+func TestNewProjectConfigDataSource(t *testing.T) {
+	if _, ok := NewProjectConfigDataSource().(*ProjectConfigDataSource); !ok {
+		t.Fatal("expected *ProjectConfigDataSource")
+	}
+}
+
+func TestProjectConfigDataSourceConfigure(t *testing.T) {
+	tests := []struct {
+		name      string
+		data      any
+		wantError bool
+	}{
+		{name: "nil", data: nil},
+		{name: "client", data: &client.Client{}},
+		{name: "wrong type", data: "wrong", wantError: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			d := &ProjectConfigDataSource{}
+			resp := &datasource.ConfigureResponse{}
+			d.Configure(context.Background(), datasource.ConfigureRequest{ProviderData: tc.data}, resp)
+			if resp.Diagnostics.HasError() != tc.wantError {
+				t.Fatalf("unexpected diagnostics: %s", resp.Diagnostics)
+			}
+		})
 	}
 }
 

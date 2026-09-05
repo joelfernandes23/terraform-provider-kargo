@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
@@ -38,6 +39,37 @@ func TestProjectConfigResourceSchema(t *testing.T) {
 	}
 	if diags := resp.Schema.ValidateImplementation(context.Background()); diags.HasError() {
 		t.Fatalf("invalid schema implementation: %s", diags)
+	}
+}
+
+func TestProjectConfigResourceMetadataAndConfigure(t *testing.T) {
+	if _, ok := NewProjectConfigResource().(*ProjectConfigResource); !ok {
+		t.Fatal("expected *ProjectConfigResource")
+	}
+	r := &ProjectConfigResource{}
+	metadata := &fwresource.MetadataResponse{}
+	r.Metadata(context.Background(), fwresource.MetadataRequest{ProviderTypeName: "kargo"}, metadata)
+	if metadata.TypeName != "kargo_project_config" {
+		t.Fatalf("unexpected type name %q", metadata.TypeName)
+	}
+
+	tests := []struct {
+		name      string
+		data      any
+		wantError bool
+	}{
+		{name: "nil", data: nil},
+		{name: "client", data: &client.Client{}},
+		{name: "wrong type", data: "wrong", wantError: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := &fwresource.ConfigureResponse{}
+			r.Configure(context.Background(), fwresource.ConfigureRequest{ProviderData: tc.data}, resp)
+			if resp.Diagnostics.HasError() != tc.wantError {
+				t.Fatalf("unexpected diagnostics: %s", resp.Diagnostics)
+			}
+		})
 	}
 }
 
@@ -115,6 +147,57 @@ func TestGenericWebhookValidation(t *testing.T) {
 	invalid.GenericActions = jsontypes.NewNormalizedValue(`[{"action":"Refresh","targetSelectionCriteria":[{"kind":"Promotion","name":"run"}]}]`)
 	if _, err := expandWebhookReceiver(invalid); err == nil {
 		t.Fatal("expected v1.11 Promotion target to be rejected")
+	}
+}
+
+func TestGenericWebhookValidationFailures(t *testing.T) {
+	tests := []struct {
+		name    string
+		actions string
+	}{
+		{name: "invalid JSON", actions: `[`},
+		{name: "empty actions", actions: `[]`},
+		{name: "unsupported action", actions: `[{"action":"Promote","targetSelectionCriteria":[{"kind":"Warehouse","name":"app"}]}]`},
+		{name: "missing targets", actions: `[{"action":"Refresh"}]`},
+		{name: "empty target", actions: `[{"action":"Refresh","targetSelectionCriteria":[{"kind":"Warehouse"}]}]`},
+		{name: "empty indices", actions: `[{"action":"Refresh","targetSelectionCriteria":[{"kind":"Warehouse","indexSelector":{"matchIndices":[]}}]}]`},
+		{name: "invalid index key", actions: `[{"action":"Refresh","targetSelectionCriteria":[{"kind":"Warehouse","indexSelector":{"matchIndices":[{"key":"bad","operator":"Equals","value":"x"}]}}]}]`},
+		{name: "invalid index operator", actions: `[{"action":"Refresh","targetSelectionCriteria":[{"kind":"Warehouse","indexSelector":{"matchIndices":[{"key":"receiverPaths","operator":"In","value":"x"}]}}]}]`},
+		{name: "empty index value", actions: `[{"action":"Refresh","targetSelectionCriteria":[{"kind":"Warehouse","indexSelector":{"matchIndices":[{"key":"subscribedURLs","operator":"Equals"}]}}]}]`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			model := ProjectConfigWebhookModel{
+				Name: types.StringValue("generic"), Type: types.StringValue("generic"), SecretName: types.StringValue("secret"),
+				GenericActions: jsontypes.NewNormalizedValue(tc.actions),
+			}
+			if _, err := expandWebhookReceiver(model); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
+	}
+}
+
+func TestProjectConfigSelectorValidation(t *testing.T) {
+	ctx := context.Background()
+	values, _ := types.ListValueFrom(ctx, types.StringType, []string{"dev"})
+	tests := []struct {
+		name      string
+		selector  ProjectConfigSelectorModel
+		wantError bool
+	}{
+		{name: "unknown prefix", selector: ProjectConfigSelectorModel{Name: types.StringValue("prefix:dev")}, wantError: true},
+		{name: "In without values", selector: ProjectConfigSelectorModel{MatchExpressions: []ProjectConfigMatchExpressionModel{{Key: types.StringValue("env"), Operator: types.StringValue("In"), Values: types.ListNull(types.StringType)}}}, wantError: true},
+		{name: "Exists with values", selector: ProjectConfigSelectorModel{MatchExpressions: []ProjectConfigMatchExpressionModel{{Key: types.StringValue("env"), Operator: types.StringValue("Exists"), Values: values}}}, wantError: true},
+		{name: "valid expression", selector: ProjectConfigSelectorModel{MatchExpressions: []ProjectConfigMatchExpressionModel{{Key: types.StringValue("env"), Operator: types.StringValue("In"), Values: values}}}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := expandProjectConfigSelector(ctx, &tc.selector)
+			if (err != nil) != tc.wantError {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
 	}
 }
 
@@ -269,6 +352,59 @@ func TestAccProjectConfigResource_basic(t *testing.T) {
 			},
 			{ResourceName: "kargo_project_config.test", ImportState: true, ImportStateVerify: true},
 		},
+	})
+}
+
+func TestAccProjectConfigResource_createError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if endsWith(r.URL.Path, "/AdminLogin") {
+			assertNoError(t, json.NewEncoder(w).Encode(map[string]string{"idToken": "test-jwt"}))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"code":"internal","message":"create failed"}`))
+	}))
+	defer srv.Close()
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories(),
+		Steps: []resource.TestStep{{
+			Config: fmt.Sprintf(`
+provider "kargo" {
+  api_url        = %q
+  admin_password = "admin"
+}
+resource "kargo_project_config" "test" {
+  project = "demo"
+  promotion_policy {
+    stage_selector { name = "dev" }
+  }
+}
+`, srv.URL),
+			ExpectError: regexp.MustCompile(`Failed to create project configuration`),
+		}},
+	})
+}
+
+func TestAccProjectConfigDataSource_notFound(t *testing.T) {
+	srv := testProjectConfigServer(t)
+	defer srv.Close()
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories(),
+		Steps: []resource.TestStep{{
+			Config: fmt.Sprintf(`
+provider "kargo" {
+  api_url        = %q
+  admin_password = "admin"
+}
+data "kargo_project_config" "test" {
+  project = "missing"
+}
+`, srv.URL),
+			ExpectError: regexp.MustCompile(`ProjectConfig not found`),
+		}},
 	})
 }
 
