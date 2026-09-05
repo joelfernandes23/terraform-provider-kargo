@@ -2,14 +2,12 @@
 page_title: "kargo_project Data Source - Kargo"
 subcategory: ""
 description: |-
-  Reads an existing Kargo project by name and exposes its current status.
+  Retrieves information about a Kargo Project.
 ---
 
 # kargo_project (Data Source)
 
-Reads an existing Kargo project by name. Use this data source when the project is created outside the current Terraform configuration, but other Terraform-managed Kargo resources need to reference it.
-
-The data source verifies the project exists through the Kargo API. If the project is missing or being deleted, Terraform returns a diagnostic instead of writing stale state.
+Retrieves information about a Kargo Project.
 
 ## Example Usage
 
@@ -19,9 +17,9 @@ data "kargo_project" "example" {
 }
 ```
 
-## Using With Other Resources
+## Project-Scoped Resources
 
-Use the project name from this data source when creating project-scoped Kargo resources:
+ProjectConfigs, Warehouses, and Stages accept the Project name through the `project` argument:
 
 ```terraform
 project = data.kargo_project.example.name
@@ -29,12 +27,10 @@ project = data.kargo_project.example.name
 
 ## Status Attributes
 
-The `status` block mirrors Kargo project readiness information:
+The `status` block contains Project readiness information:
 
 - `phase` is Kargo's current high-level project phase.
-- `conditions` is the list of Kargo status conditions, including transition timestamps when the API provides them.
-
-Status fields are read-only and are intended for inspection, outputs, and conditional integration with surrounding Terraform configuration.
+- `conditions` is the list of Kargo status conditions.
 
 ## Example Output
 
@@ -57,7 +53,7 @@ output "project_conditions" {
 
 ### Read-Only
 
-- `id` (String) The unique identifier of the project (same as name).
+- `id` (String) The name of the Kargo project.
 - `status` (Attributes) The current status of the project. (see [below for nested schema](#nestedatt--status))
 
 <a id="nestedatt--status"></a>

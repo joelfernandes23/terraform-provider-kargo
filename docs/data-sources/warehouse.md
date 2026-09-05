@@ -2,14 +2,12 @@
 page_title: "kargo_warehouse Data Source - Kargo"
 subcategory: ""
 description: |-
-  Reads an existing Kargo warehouse by project and name.
+  Retrieves information about a Kargo Warehouse.
 ---
 
 # kargo_warehouse (Data Source)
 
-Reads an existing Kargo Warehouse by project and name. Use this data source when the Warehouse is created outside the current Terraform configuration, but other Terraform-managed resources or outputs need to inspect its subscriptions, status, or current Freight.
-
-The data source verifies the Warehouse exists through the Kargo API. If the Warehouse is missing or being deleted, Terraform returns a diagnostic instead of writing stale state.
+Retrieves information about a Kargo Warehouse.
 
 ## Example Usage
 
@@ -22,9 +20,7 @@ data "kargo_warehouse" "example" {
 
 ## Freight State
 
-Kargo can return historical Freight for a Warehouse. This data source intentionally stores only the current Freight item matching `status.last_freight_id` so Terraform state stays bounded and focused on the Warehouse's latest output.
-
-Opaque Freight status metadata, image annotations, generic artifact metadata, and Warehouse discovered artifacts are intentionally not exposed in this first schema. The provider is still pre-release, so future schemas can add typed fields where they are useful and safe to keep in state.
+The `freight` attribute contains the Freight identified by `status.last_freight_id`.
 
 ## Example Output
 
@@ -48,8 +44,8 @@ output "warehouse_current_freight" {
 
 ### Read-Only
 
-- `freight` (Attributes List) The current Freight item matching status.last_freight_id. Historical Freight is intentionally not exposed. (see [below for nested schema](#nestedatt--freight))
-- `id` (String) The unique identifier of the warehouse in project/name format.
+- `freight` (Attributes List) The Freight identified by `status.last_freight_id`. (see [below for nested schema](#nestedatt--freight))
+- `id` (String) Warehouse identifier in `project/name` format.
 - `status` (Attributes) The current status of the warehouse. (see [below for nested schema](#nestedatt--status))
 - `subscription` (Attributes List) Artifact subscriptions for the warehouse. (see [below for nested schema](#nestedatt--subscription))
 

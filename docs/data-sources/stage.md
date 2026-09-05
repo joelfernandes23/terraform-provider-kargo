@@ -2,14 +2,12 @@
 page_title: "kargo_stage Data Source - Kargo"
 subcategory: ""
 description: |-
-  Reads an existing Kargo stage by project and name.
+  Retrieves information about a Kargo Stage.
 ---
 
 # kargo_stage (Data Source)
 
-Reads an existing Kargo Stage by project and name. Use this data source when the Stage is created outside the current Terraform configuration, but other Terraform-managed resources or outputs need to inspect its spec, health, or currently deployed Freight.
-
-The data source verifies the Stage exists through the Kargo API. If the Stage is missing or being deleted, Terraform returns a diagnostic instead of writing stale state.
+Retrieves information about a Kargo Stage.
 
 ## Example Usage
 
@@ -22,11 +20,7 @@ data "kargo_stage" "example" {
 
 ## Status and Freight State
 
-Kargo keeps a history of Freight collections promoted into a Stage. This data source intentionally stores only the current Freight collection (the head of the Stage's freight history) so Terraform state stays bounded. `freight` entries are sorted by origin.
-
-Freight history beyond the current collection, verification history, the in-flight `currentPromotion`, opaque health config and output, and opaque status metadata are intentionally not exposed: they are arbitrary server-controlled JSON unsuitable for Terraform state. Note that all data source attributes are persisted in Terraform state and plan files.
-
-`status.auto_promotion_enabled` and `requested_freight` `sources.direct` read as `false` when Kargo omits them from the wire.
+The `freight` attribute contains the current Freight collection. Entries are sorted by origin.
 
 ## Example Output
 
@@ -50,8 +44,8 @@ output "stage_current_freight" {
 
 ### Read-Only
 
-- `freight` (Attributes List) The current freight deployed to the stage (head of status freightHistory), one entry per origin, sorted by origin. Historical freight is intentionally not exposed. (see [below for nested schema](#nestedatt--freight))
-- `id` (String) The unique identifier of the stage in project/name format.
+- `freight` (Attributes List) The current Freight collection deployed to the Stage, with one entry per origin sorted by origin. (see [below for nested schema](#nestedatt--freight))
+- `id` (String) Stage identifier in `project/name` format.
 - `promotion_template` (Attributes) Template for promotions into this stage. Null for control-flow stages. (see [below for nested schema](#nestedatt--promotion_template))
 - `requested_freight` (Attributes List) Freight requested by this stage. (see [below for nested schema](#nestedatt--requested_freight))
 - `shard` (String) Shard that the stage belongs to. Null when the stage is not sharded.
@@ -155,7 +149,7 @@ Read-Only:
 
 Read-Only:
 
-- `direct` (Boolean) Whether freight is requested directly from the origin warehouse. False when absent on the wire; Kargo omits false values.
+- `direct` (Boolean) Whether freight is requested directly from the origin warehouse.
 - `stages` (List of String) Names of upstream stages the freight may be obtained from.
 
 
@@ -165,7 +159,7 @@ Read-Only:
 
 Read-Only:
 
-- `auto_promotion_enabled` (Boolean) Whether auto-promotion is enabled. False when absent on the wire.
+- `auto_promotion_enabled` (Boolean) Whether automatic promotion is enabled.
 - `conditions` (Attributes List) The conditions of the stage, sorted by type. (see [below for nested schema](#nestedatt--status--conditions))
 - `freight_summary` (String) Human-readable freight fulfillment summary (for example 1/1 Fulfilled).
 - `health` (Attributes) The health of the stage. Null until the stage has promotion activity. (see [below for nested schema](#nestedatt--status--health))

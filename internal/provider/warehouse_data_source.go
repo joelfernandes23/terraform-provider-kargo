@@ -112,7 +112,7 @@ func (d *WarehouseDataSource) Metadata(_ context.Context, req datasource.Metadat
 
 func (d *WarehouseDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Reads an existing Kargo warehouse by project and name.",
+		Description: "Retrieves information about a Kargo Warehouse.",
 		Attributes: map[string]schema.Attribute{
 			"project": schema.StringAttribute{
 				Required:    true,
@@ -126,7 +126,7 @@ func (d *WarehouseDataSource) Schema(_ context.Context, _ datasource.SchemaReque
 			},
 			"id": schema.StringAttribute{
 				Computed:    true,
-				Description: "The unique identifier of the warehouse in project/name format.",
+				Description: "Warehouse identifier in `project/name` format.",
 			},
 			"subscription": warehouseDataSourceSubscriptionAttribute(),
 			"status":       warehouseDataSourceStatusAttribute(),
@@ -260,7 +260,7 @@ func warehouseDataSourceStatusAttribute() schema.Attribute {
 func warehouseDataSourceFreightAttribute() schema.Attribute {
 	return schema.ListNestedAttribute{
 		Computed:    true,
-		Description: "The current Freight item matching status.last_freight_id. Historical Freight is intentionally not exposed.",
+		Description: "The Freight identified by `status.last_freight_id`.",
 		NestedObject: schema.NestedAttributeObject{
 			Attributes: map[string]schema.Attribute{
 				"name":        schema.StringAttribute{Computed: true, Description: "The Freight name."},

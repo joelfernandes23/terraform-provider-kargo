@@ -71,7 +71,7 @@ func (r *StageResource) Metadata(_ context.Context, req resource.MetadataRequest
 
 func (r *StageResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Manages a Kargo stage. Stages request freight from warehouses or upstream stages and promote it via promotion template steps.",
+		Description: "Provides a Kargo Stage resource.",
 		Attributes: map[string]schema.Attribute{
 			"project": schema.StringAttribute{
 				Required:    true,
@@ -91,7 +91,7 @@ func (r *StageResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 			},
 			"id": schema.StringAttribute{
 				Computed:    true,
-				Description: "The unique identifier of the stage in project/name format.",
+				Description: "Stage identifier in `project/name` format.",
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
 				},
@@ -180,7 +180,7 @@ func (r *StageResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 								"config": schema.StringAttribute{
 									Optional:    true,
 									CustomType:  jsontypes.NormalizedType{},
-									Description: "Step configuration as a JSON object string (use jsonencode()). Compared with JSON semantic equality. Do not inline secret values; reference Kargo secrets by name/expression instead.",
+									Description: "Step configuration in JSON format.",
 								},
 							},
 						},

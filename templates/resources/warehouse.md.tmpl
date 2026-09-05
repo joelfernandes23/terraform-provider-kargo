@@ -2,14 +2,12 @@
 page_title: "kargo_warehouse Resource - Kargo"
 subcategory: ""
 description: |-
-  Manages a Kargo warehouse. A warehouse subscribes to artifact sources and creates Freight.
+  Provides a Kargo Warehouse resource.
 ---
 
 # kargo_warehouse (Resource)
 
-Manages a Kargo Warehouse within a Kargo Project. Warehouses subscribe to artifact sources, such as container image repositories, Git repositories, and Helm chart repositories, then create Freight from newly discovered versions.
-
-Updating subscriptions changes the Warehouse in place. Changing `project` or `name` requires replacement because those fields identify the Kargo object.
+Provides a Kargo Warehouse resource. A Warehouse subscribes to container image, Git, and Helm chart repositories and produces Freight from discovered artifacts.
 
 ## Example Usage
 
@@ -19,7 +17,7 @@ Updating subscriptions changes the Warehouse in place. Changing `project` or `na
 
 Each `subscription` block must contain exactly one of `image`, `git`, or `chart`.
 
-Subscriptions are ordered. Keep the order stable when multiple artifact sources are part of the same Warehouse.
+Subscription order is significant.
 
 ## Import
 

@@ -36,7 +36,7 @@ func (r *ProjectResource) Metadata(_ context.Context, req resource.MetadataReque
 
 func (r *ProjectResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Manages a Kargo project. A project is a namespace-scoped grouping that creates a dedicated Kubernetes namespace.",
+		Description: "Provides a Kargo Project resource.",
 		Attributes: map[string]schema.Attribute{
 			"name": schema.StringAttribute{
 				Required:    true,
@@ -48,7 +48,7 @@ func (r *ProjectResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 			},
 			"id": schema.StringAttribute{
 				Computed:    true,
-				Description: "The unique identifier of the project (same as name).",
+				Description: "The name of the Kargo project.",
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
 				},

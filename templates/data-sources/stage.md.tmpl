@@ -2,14 +2,12 @@
 page_title: "kargo_stage Data Source - Kargo"
 subcategory: ""
 description: |-
-  Reads an existing Kargo stage by project and name.
+  Retrieves information about a Kargo Stage.
 ---
 
 # kargo_stage (Data Source)
 
-Reads an existing Kargo Stage by project and name. Use this data source when the Stage is created outside the current Terraform configuration, but other Terraform-managed resources or outputs need to inspect its spec, health, or currently deployed Freight.
-
-The data source verifies the Stage exists through the Kargo API. If the Stage is missing or being deleted, Terraform returns a diagnostic instead of writing stale state.
+Retrieves information about a Kargo Stage.
 
 ## Example Usage
 
@@ -17,11 +15,7 @@ The data source verifies the Stage exists through the Kargo API. If the Stage is
 
 ## Status and Freight State
 
-Kargo keeps a history of Freight collections promoted into a Stage. This data source intentionally stores only the current Freight collection (the head of the Stage's freight history) so Terraform state stays bounded. `freight` entries are sorted by origin.
-
-Freight history beyond the current collection, verification history, the in-flight `currentPromotion`, opaque health config and output, and opaque status metadata are intentionally not exposed: they are arbitrary server-controlled JSON unsuitable for Terraform state. Note that all data source attributes are persisted in Terraform state and plan files.
-
-`status.auto_promotion_enabled` and `requested_freight` `sources.direct` read as `false` when Kargo omits them from the wire.
+The `freight` attribute contains the current Freight collection. Entries are sorted by origin.
 
 ## Example Output
 
