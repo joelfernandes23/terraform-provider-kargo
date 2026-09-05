@@ -354,7 +354,7 @@ func flattenStageDataSourceStatus(ctx context.Context, status client.StageStatus
 			Status:             types.StringValue(condition.Status),
 			Reason:             computedStringValue(condition.Reason),
 			Message:            computedStringValue(condition.Message),
-			LastTransitionTime: computedStringValue(condition.LastTransitionTime),
+			LastTransitionTime: computedStringValue(condition.LastTransitionTime.String()),
 		})
 	}
 

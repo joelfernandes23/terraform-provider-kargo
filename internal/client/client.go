@@ -46,6 +46,10 @@ type KargoClient interface {
 	GetStage(ctx context.Context, project, name string) (*Stage, error)
 	UpdateStage(ctx context.Context, project, name string, spec StageSpec) (*Stage, error)
 	DeleteStage(ctx context.Context, project, name string) error
+	CreateProjectConfig(ctx context.Context, project string, spec ProjectConfigSpec) (*ProjectConfig, error)
+	GetProjectConfig(ctx context.Context, project string) (*ProjectConfig, error)
+	UpdateProjectConfig(ctx context.Context, project string, spec ProjectConfigSpec) (*ProjectConfig, error)
+	DeleteProjectConfig(ctx context.Context, project string) error
 }
 
 var _ KargoClient = (*Client)(nil)

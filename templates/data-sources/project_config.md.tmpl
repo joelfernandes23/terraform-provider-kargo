@@ -1,0 +1,22 @@
+---
+page_title: "kargo_project_config Data Source - Kargo"
+subcategory: ""
+description: |-
+  Reads a Kargo ProjectConfig.
+---
+
+# kargo_project_config (Data Source)
+
+Reads promotion policies, webhook receiver configuration, and generated endpoints for a ProjectConfig. Promotion policies and receivers are returned as normalized JSON in the Kargo API field format.
+
+Webhook endpoint output is sensitive because some receiver types use an unguessable URL as authentication material.
+
+## Example Usage
+
+```terraform
+data "kargo_project_config" "example" {
+  project = "example-project"
+}
+```
+
+{{ .SchemaMarkdown | trimspace }}

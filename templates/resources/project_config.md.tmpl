@@ -1,0 +1,53 @@
+---
+page_title: "kargo_project_config Resource - Kargo"
+subcategory: ""
+description: |-
+  Manages automatic promotion policies and webhook receivers for a Kargo project.
+---
+
+# kargo_project_config (Resource)
+
+Each Kargo Project can have one ProjectConfig. Its name and namespace are both derived from `project`.
+
+Policies are evaluated in order and the first matching policy wins. Prefer exact Stage names for sensitive environments; broad patterns and label selectors can allow newly created Stages to inherit automatic promotion.
+
+Webhook receivers reference Kubernetes Secrets by name. Secret values are never accepted by this resource. Generated webhook paths and URLs are sensitive because some receiver types use an unguessable URL as authentication material.
+
+## Example Usage
+
+```terraform
+resource "kargo_project" "example" {
+  name = "example-project"
+}
+
+resource "kargo_project_config" "example" {
+  project = kargo_project.example.name
+
+  promotion_policy {
+    stage_selector {
+      name = "dev"
+    }
+    auto_promotion_enabled = true
+  }
+
+  webhook_receiver {
+    name        = "github"
+    type        = "github"
+    secret_name = "github-webhook-secret"
+  }
+}
+```
+
+For generic receivers, `generic_actions` is normalized JSON in the Kargo API shape. Kargo v1.9.5 supports only `Refresh` actions targeting `Warehouse` resources.
+
+## Import
+
+Import using the Project name:
+
+```shell
+terraform import kargo_project_config.example example-project
+```
+
+Automatic rollback is not supported because it is Kargo Enterprise-only. Freight links, Stage links, and generic webhook Promotion targets require Kargo v1.11 and will be added separately.
+
+{{ .SchemaMarkdown | trimspace }}

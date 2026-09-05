@@ -150,7 +150,7 @@ func (d *ProjectDataSource) Read(ctx context.Context, req datasource.ReadRequest
 			Status:             types.StringValue(condition.Status),
 			Reason:             types.StringValue(condition.Reason),
 			Message:            types.StringValue(condition.Message),
-			LastTransitionTime: types.StringValue(condition.LastTransitionTime),
+			LastTransitionTime: types.StringValue(condition.LastTransitionTime.String()),
 		}
 	}
 

@@ -89,8 +89,8 @@ func TestProviderResources(t *testing.T) {
 	if resources == nil {
 		t.Error("expected non-nil resources slice")
 	}
-	if len(resources) != 3 {
-		t.Errorf("expected 3 resources, got %d", len(resources))
+	if len(resources) != 4 {
+		t.Errorf("expected 4 resources, got %d", len(resources))
 	}
 }
 
@@ -100,8 +100,8 @@ func TestProviderDataSources(t *testing.T) {
 	if dataSources == nil {
 		t.Error("expected non-nil data sources slice")
 	}
-	if len(dataSources) != 3 {
-		t.Errorf("expected 3 data sources, got %d", len(dataSources))
+	if len(dataSources) != 4 {
+		t.Errorf("expected 4 data sources, got %d", len(dataSources))
 	}
 }
 

@@ -28,11 +28,11 @@ type WarehouseStatus struct {
 }
 
 type WarehouseCondition struct {
-	Type               string `json:"type"`
-	Status             string `json:"status"`
-	Reason             string `json:"reason,omitempty"`
-	Message            string `json:"message,omitempty"`
-	LastTransitionTime string `json:"lastTransitionTime,omitempty"`
+	Type               string    `json:"type"`
+	Status             string    `json:"status"`
+	Reason             string    `json:"reason,omitempty"`
+	Message            string    `json:"message,omitempty"`
+	LastTransitionTime KargoTime `json:"lastTransitionTime,omitempty"`
 }
 
 type Warehouse struct {
