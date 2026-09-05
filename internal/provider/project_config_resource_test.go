@@ -383,7 +383,7 @@ func TestAccProjectConfigResource_outOfBandDeletion(t *testing.T) {
 			},
 			{
 				PreConfig: func() {
-					req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, srv.URL+"/test/delete", nil)
+					req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, srv.URL+"/test/delete", http.NoBody)
 					assertNoError(t, err)
 					resp, err := http.DefaultClient.Do(req)
 					assertNoError(t, err)
