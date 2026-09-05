@@ -120,6 +120,10 @@ func TestExpandProjectConfigValidation(t *testing.T) {
 			{Name: types.StringValue("same"), Type: types.StringValue("gitlab"), SecretName: types.StringValue("secret"), GenericActions: jsontypes.NewNormalizedNull()},
 		}}},
 		{name: "generic missing actions", model: ProjectConfigResourceModel{WebhookReceivers: []ProjectConfigWebhookModel{{Name: types.StringValue("generic"), Type: types.StringValue("generic"), SecretName: types.StringValue("secret"), GenericActions: jsontypes.NewNormalizedNull()}}}},
+		{name: "duplicate exact policy", model: ProjectConfigResourceModel{PromotionPolicies: []ProjectConfigPolicyModel{
+			{StageSelector: &ProjectConfigSelectorModel{Name: types.StringValue("dev")}},
+			{StageSelector: &ProjectConfigSelectorModel{Name: types.StringValue("dev")}},
+		}}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -280,12 +284,22 @@ func TestFlattenProjectConfig(t *testing.T) {
 	}
 }
 
+func TestFlattenProjectConfigUsesRequestedProjectWithoutNamespace(t *testing.T) {
+	data := flattenProjectConfig(context.Background(), "demo", &client.ProjectConfig{}, nil)
+	if data.Project.ValueString() != "demo" || data.ID.ValueString() != "demo" {
+		t.Fatalf("unexpected project fallback: %#v", data)
+	}
+}
+
 func testProjectConfigServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	var stored map[string]any
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
+		case endsWith(r.URL.Path, "/test/delete"):
+			stored = nil
+			w.WriteHeader(http.StatusNoContent)
 		case endsWith(r.URL.Path, "/AdminLogin"):
 			assertNoError(t, json.NewEncoder(w).Encode(map[string]string{"idToken": "test-jwt"}))
 		case endsWith(r.URL.Path, "/CreateResource"), endsWith(r.URL.Path, "/UpdateResource"):
@@ -351,6 +365,37 @@ func TestAccProjectConfigResource_basic(t *testing.T) {
 				),
 			},
 			{ResourceName: "kargo_project_config.test", ImportState: true, ImportStateVerify: true},
+		},
+	})
+}
+
+func TestAccProjectConfigResource_outOfBandDeletion(t *testing.T) {
+	srv := testProjectConfigServer(t)
+	defer srv.Close()
+	config := testProjectConfigResourceConfig(srv.URL, "dev", true)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check:  resource.TestCheckResourceAttr("kargo_project_config.test", "id", "demo"),
+			},
+			{
+				PreConfig: func() {
+					req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, srv.URL+"/test/delete", nil)
+					assertNoError(t, err)
+					resp, err := http.DefaultClient.Do(req)
+					assertNoError(t, err)
+					_ = resp.Body.Close()
+				},
+				RefreshState:       true,
+				ExpectNonEmptyPlan: true,
+			},
+			{
+				Config: config,
+				Check:  resource.TestCheckResourceAttr("kargo_project_config.test", "id", "demo"),
+			},
 		},
 	})
 }
