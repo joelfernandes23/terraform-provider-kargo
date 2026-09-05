@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/joelfernandes23/terraform-provider-kargo/compare/v0.5.0...v0.6.0) (2026-09-05)
+
+
+### Features
+
+* add project config resource and data source ([#31](https://github.com/joelfernandes23/terraform-provider-kargo/issues/31)) ([94c14b8](https://github.com/joelfernandes23/terraform-provider-kargo/commit/94c14b8fd4000cf7d5285e910890a8d5b753acaf))
+
 ## [0.5.0](https://github.com/joelfernandes23/terraform-provider-kargo/compare/v0.4.1...v0.5.0) (2026-07-08)
 
 
