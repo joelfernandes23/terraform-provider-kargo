@@ -2,14 +2,12 @@
 page_title: "kargo_project_config Data Source - Kargo"
 subcategory: ""
 description: |-
-  Reads promotion policies and webhook receivers for a Kargo project.
+  Retrieves information about a Kargo ProjectConfig.
 ---
 
 # kargo_project_config (Data Source)
 
-Use this data source to look up the promotion policies, webhook receivers, and generated webhook endpoints for an existing Kargo project.
-
-Promotion policies and webhook receivers are returned as JSON so they can be decoded with Terraform's `jsondecode` function. Generated webhook endpoints are marked as sensitive because access to a URL may be enough to trigger that webhook.
+Retrieves information about a Kargo ProjectConfig.
 
 ## Example Usage
 

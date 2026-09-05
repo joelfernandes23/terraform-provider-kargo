@@ -2,16 +2,12 @@
 page_title: "kargo_project_config Resource - Kargo"
 subcategory: ""
 description: |-
-  Manages automatic promotion policies and webhook receivers for a Kargo project.
+  Provides a Kargo ProjectConfig resource.
 ---
 
 # kargo_project_config (Resource)
 
-Use this resource once per Kargo project to control automatic promotions and incoming webhooks.
-
-Kargo checks promotion policies from top to bottom and uses the first match. Put specific stage rules before broader rules. Exact stage names are recommended for production and other sensitive environments.
-
-For a webhook receiver, provide the name of a Secret that already exists in the project. This resource does not read or store the Secret value. Terraform marks generated webhook URLs as sensitive because access to a URL may be enough to trigger that webhook.
+Provides a Kargo ProjectConfig resource. A ProjectConfig defines promotion policies and webhook receivers for a Project.
 
 ## Example Usage
 
@@ -37,8 +33,6 @@ resource "kargo_project_config" "example" {
   }
 }
 ```
-
-For a generic receiver, set `generic_actions` to a JSON array describing which Warehouses Kargo should refresh when the webhook is called.
 
 ## Import
 
