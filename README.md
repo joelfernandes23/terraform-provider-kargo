@@ -15,12 +15,14 @@ Implemented so far:
 
 - `kargo_project` resource
 - `kargo_project` data source
-- `kargo_warehouse` resource with image, Git, and Helm chart subscriptions
+- `kargo_warehouse` resource and data source
+- `kargo_stage` resource and data source
+- `kargo_project_config` resource and data source for promotion policies and webhook receivers
 
 Planned next:
 
-- `kargo_warehouse` data source
-- `kargo_stage` resource and data source
+- Kargo v1.11 ProjectConfig deep links and generic webhook Promotion targets
+- broader Warehouse and Stage schema coverage
 - additional observability, documentation, and release hardening
 
 ## Example Usage
@@ -59,6 +61,17 @@ resource "kargo_warehouse" "example" {
       tag_selection_strategy = "SemVer"
       platform               = "linux/amd64"
     }
+  }
+}
+
+resource "kargo_project_config" "example" {
+  project = kargo_project.example.name
+
+  promotion_policy {
+    stage_selector {
+      name = "dev"
+    }
+    auto_promotion_enabled = true
   }
 }
 ```

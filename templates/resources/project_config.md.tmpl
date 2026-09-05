@@ -1,0 +1,45 @@
+---
+page_title: "kargo_project_config Resource - Kargo"
+subcategory: ""
+description: |-
+  Provides a Kargo ProjectConfig resource.
+---
+
+# kargo_project_config (Resource)
+
+Provides a Kargo ProjectConfig resource. A ProjectConfig defines promotion policies and webhook receivers for a Project.
+
+## Example Usage
+
+```terraform
+resource "kargo_project" "example" {
+  name = "example-project"
+}
+
+resource "kargo_project_config" "example" {
+  project = kargo_project.example.name
+
+  promotion_policy {
+    stage_selector {
+      name = "dev"
+    }
+    auto_promotion_enabled = true
+  }
+
+  webhook_receiver {
+    name        = "github"
+    type        = "github"
+    secret_name = "github-webhook-secret"
+  }
+}
+```
+
+## Import
+
+Import using the Project name:
+
+```shell
+terraform import kargo_project_config.example example-project
+```
+
+{{ .SchemaMarkdown | trimspace }}

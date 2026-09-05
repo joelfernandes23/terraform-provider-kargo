@@ -89,6 +89,7 @@ func (p *KargoProvider) Resources(_ context.Context) []func() resource.Resource 
 		NewProjectResource,
 		NewWarehouseResource,
 		NewStageResource,
+		NewProjectConfigResource,
 	}
 }
 
@@ -97,6 +98,7 @@ func (p *KargoProvider) DataSources(_ context.Context) []func() datasource.DataS
 		NewProjectDataSource,
 		NewWarehouseDataSource,
 		NewStageDataSource,
+		NewProjectConfigDataSource,
 	}
 }
 

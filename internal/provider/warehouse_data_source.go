@@ -428,7 +428,7 @@ func flattenWarehouseDataSourceStatus(status client.WarehouseStatus) *WarehouseD
 			Status:             types.StringValue(condition.Status),
 			Reason:             computedStringValue(condition.Reason),
 			Message:            computedStringValue(condition.Message),
-			LastTransitionTime: computedStringValue(condition.LastTransitionTime),
+			LastTransitionTime: computedStringValue(condition.LastTransitionTime.String()),
 		})
 	}
 
