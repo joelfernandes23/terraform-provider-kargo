@@ -81,7 +81,7 @@ func (d *StageDataSource) Metadata(_ context.Context, req datasource.MetadataReq
 
 func (d *StageDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Reads an existing Kargo stage by project and name.",
+		Description: "Retrieves information about a Kargo Stage.",
 		Attributes: map[string]schema.Attribute{
 			"project": schema.StringAttribute{
 				Required:    true,
@@ -95,7 +95,7 @@ func (d *StageDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, 
 			},
 			"id": schema.StringAttribute{
 				Computed:    true,
-				Description: "The unique identifier of the stage in project/name format.",
+				Description: "Stage identifier in `project/name` format.",
 			},
 			"shard": schema.StringAttribute{
 				Computed:    true,
@@ -173,7 +173,7 @@ func stageDataSourceRequestedFreightAttribute() schema.Attribute {
 					Attributes: map[string]schema.Attribute{
 						"direct": schema.BoolAttribute{
 							Computed:    true,
-							Description: "Whether freight is requested directly from the origin warehouse. False when absent on the wire; Kargo omits false values.",
+							Description: "Whether freight is requested directly from the origin warehouse.",
 						},
 						"stages": schema.ListAttribute{
 							ElementType: types.StringType,
@@ -251,7 +251,7 @@ func stageDataSourceStatusAttribute() schema.Attribute {
 			},
 			"auto_promotion_enabled": schema.BoolAttribute{
 				Computed:    true,
-				Description: "Whether auto-promotion is enabled. False when absent on the wire.",
+				Description: "Whether automatic promotion is enabled.",
 			},
 			"last_handled_refresh": schema.StringAttribute{
 				Computed:    true,
@@ -273,7 +273,7 @@ func stageDataSourceStatusAttribute() schema.Attribute {
 func stageDataSourceFreightAttribute() schema.Attribute {
 	return schema.ListNestedAttribute{
 		Computed:    true,
-		Description: "The current freight deployed to the stage (head of status freightHistory), one entry per origin, sorted by origin. Historical freight is intentionally not exposed.",
+		Description: "The current Freight collection deployed to the Stage, with one entry per origin sorted by origin.",
 		NestedObject: schema.NestedAttributeObject{
 			Attributes: map[string]schema.Attribute{
 				"name":        schema.StringAttribute{Computed: true, Description: "The Freight name."},

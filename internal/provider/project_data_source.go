@@ -48,7 +48,7 @@ func (d *ProjectDataSource) Metadata(_ context.Context, req datasource.MetadataR
 
 func (d *ProjectDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Reads an existing Kargo project by name.",
+		Description: "Retrieves information about a Kargo Project.",
 		Attributes: map[string]schema.Attribute{
 			"name": schema.StringAttribute{
 				Required:    true,
@@ -57,7 +57,7 @@ func (d *ProjectDataSource) Schema(_ context.Context, _ datasource.SchemaRequest
 			},
 			"id": schema.StringAttribute{
 				Computed:    true,
-				Description: "The unique identifier of the project (same as name).",
+				Description: "The name of the Kargo project.",
 			},
 			"status": schema.SingleNestedAttribute{
 				Computed:    true,

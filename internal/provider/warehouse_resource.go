@@ -67,7 +67,7 @@ func (r *WarehouseResource) Metadata(_ context.Context, req resource.MetadataReq
 
 func (r *WarehouseResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Manages a Kargo warehouse. A warehouse subscribes to artifact sources and creates Freight.",
+		Description: "Provides a Kargo Warehouse resource.",
 		Attributes: map[string]schema.Attribute{
 			"project": schema.StringAttribute{
 				Required:    true,
@@ -87,7 +87,7 @@ func (r *WarehouseResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 			},
 			"id": schema.StringAttribute{
 				Computed:    true,
-				Description: "The unique identifier of the warehouse in project/name format.",
+				Description: "Warehouse identifier in `project/name` format.",
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
 				},
@@ -95,7 +95,7 @@ func (r *WarehouseResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 		},
 		Blocks: map[string]schema.Block{
 			"subscription": schema.ListNestedBlock{
-				Description: "Ordered artifact subscriptions for the warehouse. Subscription order is user-significant.",
+				Description: "Ordered artifact subscriptions for the warehouse.",
 				Validators: []validator.List{
 					listvalidator.SizeAtLeast(1),
 				},

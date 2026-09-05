@@ -1,29 +1,46 @@
 # Terraform Provider for Kargo
 
 [![codecov](https://codecov.io/gh/joelfernandes23/terraform-provider-kargo/branch/main/graph/badge.svg)](https://codecov.io/gh/joelfernandes23/terraform-provider-kargo)
+[![Terraform Registry](https://img.shields.io/badge/Terraform-Registry-7B42BC?logo=terraform)](https://registry.terraform.io/providers/joelfernandes23/kargo/latest)
+[![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](LICENSE)
+
+Manage [Kargo](https://kargo.io/) Projects, ProjectConfigs, Warehouses, and Stages with Terraform.
+
+## Quick Start
+
+```terraform
+terraform {
+  required_providers {
+    kargo = {
+      source  = "joelfernandes23/kargo"
+      version = "~> 0.6"
+    }
+  }
+}
+
+provider "kargo" {
+  api_url      = "https://kargo.example.com"
+  bearer_token = var.kargo_bearer_token
+}
+
+resource "kargo_project" "example" {
+  name = "example-project"
+}
+```
+
+Run `terraform init`, followed by `terraform plan`.
 
 > [!WARNING]
-> This provider is still in active development and should be treated as prerelease software.
->
-> Breaking changes are expected before a stable release. Resource schemas, import formats, behavior, and version compatibility may change between releases. Pin provider versions carefully and review changelogs before upgrading.
+> This provider is prerelease software. Pin its version and review the changelog before upgrading.
 
-The Kargo Terraform provider manages [Kargo](https://kargo.io/) continuous delivery resources through Terraform. It talks to the Kargo API using the Connect JSON protocol and is currently developed against Kargo `v1.9.5+`.
+## Supported Resources
 
-## Current Status
-
-Implemented so far:
-
-- `kargo_project` resource
-- `kargo_project` data source
+- `kargo_project` resource and data source
+- `kargo_project_config` resource and data source
 - `kargo_warehouse` resource and data source
 - `kargo_stage` resource and data source
-- `kargo_project_config` resource and data source for promotion policies and webhook receivers
 
-Planned next:
-
-- Kargo v1.11 ProjectConfig deep links and generic webhook Promotion targets
-- broader Warehouse and Stage schema coverage
-- additional observability, documentation, and release hardening
+See the [Terraform Registry documentation](https://registry.terraform.io/providers/joelfernandes23/kargo/latest/docs) for schemas and examples.
 
 ## Example Usage
 
@@ -32,9 +49,7 @@ terraform {
   required_providers {
     kargo = {
       source  = "joelfernandes23/kargo"
-      # Pin to a released version that includes the resources you use.
-      # This provider is prerelease, so review changelogs before upgrading.
-      # version = "0.x.y"
+      version = "~> 0.6"
     }
   }
 

@@ -2,14 +2,12 @@
 page_title: "kargo_project Resource - Kargo"
 subcategory: ""
 description: |-
-  Manages a Kargo project. A project groups Kargo resources and creates the backing Kubernetes namespace used by Warehouses and Stages.
+  Provides a Kargo Project resource.
 ---
 
 # kargo_project (Resource)
 
-Manages a Kargo project. A project is the root container for a Kargo delivery pipeline and owns the namespace-scoped resources that follow, including Warehouses and Stages.
-
-Creating a `kargo_project` creates the corresponding Kargo Project through the Kargo API. Deleting it removes the Kargo Project, which also removes the backing Kubernetes namespace and the Kargo resources inside it.
+Provides a Kargo Project resource. A Project contains ProjectConfigs, Warehouses, Stages, Freight, and Promotions in a dedicated Kubernetes namespace.
 
 ## Example Usage
 
@@ -27,7 +25,7 @@ Project names must be valid Kubernetes DNS-1123 labels:
 - lowercase letters, numbers, and hyphens only
 - must start and end with a letter or number
 
-Changing `name` requires replacing the resource because Kargo project names are immutable.
+Changing `name` replaces the resource. Deleting a Project also deletes its Kubernetes namespace and the Kargo resources in that namespace.
 
 ## Import
 
@@ -37,9 +35,9 @@ Import an existing project by name:
 terraform import kargo_project.example existing-project
 ```
 
-## Relationship To Other Resources
+## Project-Scoped Resources
 
-Warehouses and Stages are scoped to a project. Later resources should reference the managed project name rather than repeating literals:
+ProjectConfigs, Warehouses, and Stages accept the Project name through the `project` argument:
 
 ```terraform
 project = kargo_project.example.name
@@ -54,4 +52,4 @@ project = kargo_project.example.name
 
 ### Read-Only
 
-- `id` (String) The unique identifier of the project (same as name).
+- `id` (String) The name of the Kargo project.

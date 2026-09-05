@@ -2,14 +2,12 @@
 page_title: "kargo_stage Resource - Kargo"
 subcategory: ""
 description: |-
-  Manages a Kargo stage. A stage requests Freight and promotes it through user-defined steps.
+  Provides a Kargo Stage resource.
 ---
 
 # kargo_stage (Resource)
 
-Manages a Kargo Stage within a Kargo Project. Stages form the promotion pipeline: each Stage requests Freight — either directly from a Warehouse or from upstream Stages — and promotes it by running the steps in its promotion template.
-
-Updating freight requests or promotion steps changes the Stage in place. Changing `project` or `name` requires replacement because those fields identify the Kargo object.
+Provides a Kargo Stage resource. A Stage requests Freight from a Warehouse or upstream Stages and runs the steps in its promotion template.
 
 ## Example Usage
 
@@ -86,11 +84,11 @@ resource "kargo_stage" "prod" {
 
 ## Freight Requests
 
-Each `requested_freight` block names an origin (a Warehouse by default) and where Freight may come from: `sources.direct = true` accepts Freight straight from the Warehouse, while `sources.stages` lists upstream Stages that must have verified the Freight first. Chain Stages by referencing the upstream Stage's `name` to build a pipeline such as test → staging → prod.
+Each `requested_freight` block defines a Warehouse origin. `sources.direct` permits Freight directly from the Warehouse. `sources.stages` permits Freight from the specified upstream Stages.
 
 ## Promotion Steps
 
-Each `step` in `promotion_template` runs a Kargo promotion step (`git-clone`, `helm-update-image`, `argocd-update`, and so on). Step `config` is a JSON string — compared semantically, so re-ordering keys never produces a diff. Reference credentials and secrets by Kargo secret name or expression inside `config`; never inline secret values, as step config is stored in Terraform state.
+Each `step` in `promotion_template` defines a Kargo promotion step. The `config` argument accepts a JSON object string.
 
 ## Import
 
@@ -116,7 +114,7 @@ terraform import kargo_stage.example example-project/staging
 
 ### Read-Only
 
-- `id` (String) The unique identifier of the stage in project/name format.
+- `id` (String) Stage identifier in `project/name` format.
 
 <a id="nestedblock--promotion_template"></a>
 ### Nested Schema for `promotion_template`
@@ -131,7 +129,7 @@ Optional:
 Optional:
 
 - `as` (String) Alias for referencing this step's output.
-- `config` (String) Step configuration as a JSON object string (use jsonencode()). Compared with JSON semantic equality. Do not inline secret values; reference Kargo secrets by name/expression instead.
+- `config` (String) Step configuration in JSON format.
 - `uses` (String) Name of the promotion step runner (for example git-clone). Required.
 
 
