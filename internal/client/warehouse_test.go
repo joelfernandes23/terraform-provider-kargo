@@ -97,6 +97,48 @@ func TestCreateWarehouse(t *testing.T) {
 	})
 }
 
+func TestWarehouseManifestRoundTripsCompleteSpec(t *testing.T) {
+	limit := int64(12)
+	value := true
+	spec := WarehouseSpec{
+		Shard: "edge", Interval: "10m", FreightCreationPolicy: "Manual", FreightCreationCriteria: &FreightCreationCriteria{Expression: "has(artifacts)"},
+		Subscriptions: []WarehouseSubscription{
+			{Name: "image", Image: &ImageSubscription{RepoURL: "ghcr.io/example/app", AllowTags: "^v", IgnoreTags: []string{"skip"}, AllowTagsRegexes: []string{"^v"}, CacheByTag: &value, DiscoveryLimit: &limit, StrictSemvers: &value}},
+			{Name: "git", Git: &GitSubscription{RepoURL: "https://example.test/repo.git", AllowTags: "^v", IgnoreTags: []string{"skip"}, CommitSelectionStrategy: "NewestFromBranch", IncludePaths: []string{"apps/**"}, Blobless: &value, DiscoveryLimit: &limit}},
+			{Name: "chart", Chart: &ChartSubscription{RepoURL: "oci://registry.example/chart", DiscoveryLimit: &limit, InsecureSkipTLSVerify: &value}},
+			{Name: "custom", Generic: &GenericSubscription{Type: "npm", Config: json.RawMessage(`{"package":"example"}`)}},
+		},
+	}
+	manifest := marshalWarehouseManifest("demo", "app", spec)
+	var decoded struct {
+		Spec WarehouseSpec `json:"spec"`
+	}
+	if err := json.Unmarshal(manifest, &decoded); err != nil {
+		t.Fatalf("unmarshalling manifest: %v", err)
+	}
+	if decoded.Spec.Shard != "edge" || decoded.Spec.Interval != "10m" || decoded.Spec.FreightCreationCriteria == nil {
+		t.Fatalf("warehouse-level fields lost: %#v", decoded.Spec)
+	}
+	if decoded.Spec.Subscriptions[0].Image.DiscoveryLimit == nil || *decoded.Spec.Subscriptions[0].Image.DiscoveryLimit != limit {
+		t.Fatal("image fields lost")
+	}
+	if decoded.Spec.Subscriptions[0].Image.AllowTags != "^v" || len(decoded.Spec.Subscriptions[0].Image.IgnoreTags) != 1 {
+		t.Fatal("deprecated image tag fields lost")
+	}
+	if decoded.Spec.Subscriptions[1].Git.CommitSelectionStrategy != "NewestFromBranch" || !*decoded.Spec.Subscriptions[1].Git.Blobless {
+		t.Fatal("git fields lost")
+	}
+	if decoded.Spec.Subscriptions[1].Git.AllowTags != "^v" || len(decoded.Spec.Subscriptions[1].Git.IgnoreTags) != 1 {
+		t.Fatal("deprecated Git tag fields lost")
+	}
+	if decoded.Spec.Subscriptions[2].Chart.DiscoveryLimit == nil || !*decoded.Spec.Subscriptions[2].Chart.InsecureSkipTLSVerify {
+		t.Fatal("chart fields lost")
+	}
+	if decoded.Spec.Subscriptions[3].Generic == nil || decoded.Spec.Subscriptions[3].Generic.Type != "npm" {
+		t.Fatalf("generic subscription lost: %#v", decoded.Spec.Subscriptions[3])
+	}
+}
+
 func TestGetWarehouse(t *testing.T) {
 	t.Run("exists", func(t *testing.T) {
 		c, srv := testClientWithServer(t, func(w http.ResponseWriter, _ *http.Request) {

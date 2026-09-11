@@ -168,17 +168,30 @@ Read-Only:
 Read-Only:
 
 - `chart` (Attributes) Helm chart repository subscription. (see [below for nested schema](#nestedatt--subscription--chart))
+- `generic` (Attributes) Extension subscription. (see [below for nested schema](#nestedatt--subscription--generic))
 - `git` (Attributes) Git repository subscription. (see [below for nested schema](#nestedatt--subscription--git))
 - `image` (Attributes) Container image repository subscription. (see [below for nested schema](#nestedatt--subscription--image))
+- `name` (String) Subscription name.
 
 <a id="nestedatt--subscription--chart"></a>
 ### Nested Schema for `subscription.chart`
 
 Read-Only:
 
-- `name` (String) The chart name for classic chart repositories.
-- `repo_url` (String) The Helm chart repository URL.
-- `semver_constraint` (String) SemVer constraint for acceptable chart versions.
+- `discovery_limit` (Number) Chart discovery limit.
+- `insecure_skip_tls_verify` (Boolean) Whether TLS verification is skipped.
+- `name` (String) Chart name.
+- `repo_url` (String) Chart repository URL.
+- `semver_constraint` (String) Chart SemVer constraint.
+
+
+<a id="nestedatt--subscription--generic"></a>
+### Nested Schema for `subscription.generic`
+
+Read-Only:
+
+- `config` (String) Extension subscription JSON configuration.
+- `type` (String) Kargo extension subscription type.
 
 
 <a id="nestedatt--subscription--git"></a>
@@ -186,9 +199,22 @@ Read-Only:
 
 Read-Only:
 
-- `branch` (String) Branch to watch.
-- `repo_url` (String) The Git repository URL.
-- `semver_constraint` (String) SemVer constraint for acceptable Git tags.
+- `allow_tags` (String) Deprecated Git tag filter.
+- `allow_tags_regexes` (List of String) Git tag inclusion patterns.
+- `blobless` (Boolean) Whether blobless cloning is enabled.
+- `branch` (String) Git branch.
+- `commit_selection_strategy` (String) Git commit selection strategy.
+- `discovery_limit` (Number) Git discovery limit.
+- `exclude_paths` (List of String) Git path exclusions.
+- `expression_filter` (String) Git expression filter.
+- `ignore_tags` (List of String) Deprecated Git tag exclusions.
+- `ignore_tags_regexes` (List of String) Git tag exclusion patterns.
+- `include_paths` (List of String) Git path inclusions.
+- `insecure_skip_tls_verify` (Boolean) Whether TLS verification is skipped.
+- `repo_url` (String) Git repository URL.
+- `semver_constraint` (String) Git SemVer constraint.
+- `since` (String) Git discovery cutoff.
+- `strict_semvers` (Boolean) Whether strict SemVer is required.
 
 
 <a id="nestedatt--subscription--image"></a>
@@ -196,7 +222,15 @@ Read-Only:
 
 Read-Only:
 
-- `platform` (String) Target image platform, such as linux/amd64.
-- `repo_url` (String) The image repository URL without a tag.
-- `semver_constraint` (String) SemVer constraint for acceptable image tags.
-- `tag_selection_strategy` (String) Image tag selection strategy.
+- `allow_tags` (String) Deprecated image tag filter.
+- `allow_tags_regexes` (List of String) Image tag inclusion patterns.
+- `cache_by_tag` (Boolean) Whether metadata is cached by tag.
+- `discovery_limit` (Number) Image discovery limit.
+- `ignore_tags` (List of String) Deprecated image tag exclusions.
+- `ignore_tags_regexes` (List of String) Image tag exclusion patterns.
+- `insecure_skip_tls_verify` (Boolean) Whether TLS verification is skipped.
+- `platform` (String) Image platform.
+- `repo_url` (String) Image repository URL.
+- `semver_constraint` (String) Image constraint.
+- `strict_semvers` (Boolean) Whether strict SemVer is required.
+- `tag_selection_strategy` (String) Image selection strategy.

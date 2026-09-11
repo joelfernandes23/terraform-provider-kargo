@@ -190,36 +190,55 @@ func warehouseDataSourceSubscriptionAttribute() schema.Attribute {
 		Description: "Artifact subscriptions for the warehouse.",
 		NestedObject: schema.NestedAttributeObject{
 			Attributes: map[string]schema.Attribute{
+				"name": schema.StringAttribute{Computed: true, Description: "Subscription name."},
 				"image": schema.SingleNestedAttribute{
 					Computed:    true,
 					Description: "Container image repository subscription.",
-					Attributes: map[string]schema.Attribute{
-						"repo_url":               schema.StringAttribute{Computed: true, Description: "The image repository URL without a tag."},
-						"semver_constraint":      schema.StringAttribute{Computed: true, Description: "SemVer constraint for acceptable image tags."},
-						"tag_selection_strategy": schema.StringAttribute{Computed: true, Description: "Image tag selection strategy."},
-						"platform":               schema.StringAttribute{Computed: true, Description: "Target image platform, such as linux/amd64."},
-					},
+					Attributes:  warehouseDataSourceImageAttributes(),
 				},
 				"git": schema.SingleNestedAttribute{
 					Computed:    true,
 					Description: "Git repository subscription.",
-					Attributes: map[string]schema.Attribute{
-						"repo_url":          schema.StringAttribute{Computed: true, Description: "The Git repository URL."},
-						"branch":            schema.StringAttribute{Computed: true, Description: "Branch to watch."},
-						"semver_constraint": schema.StringAttribute{Computed: true, Description: "SemVer constraint for acceptable Git tags."},
-					},
+					Attributes:  warehouseDataSourceGitAttributes(),
 				},
 				"chart": schema.SingleNestedAttribute{
 					Computed:    true,
 					Description: "Helm chart repository subscription.",
-					Attributes: map[string]schema.Attribute{
-						"repo_url":          schema.StringAttribute{Computed: true, Description: "The Helm chart repository URL."},
-						"name":              schema.StringAttribute{Computed: true, Description: "The chart name for classic chart repositories."},
-						"semver_constraint": schema.StringAttribute{Computed: true, Description: "SemVer constraint for acceptable chart versions."},
-					},
+					Attributes:  warehouseDataSourceChartAttributes(),
 				},
+				"generic": schema.SingleNestedAttribute{Computed: true, Description: "Extension subscription.", Attributes: map[string]schema.Attribute{
+					"type": schema.StringAttribute{Computed: true, Description: "Kargo extension subscription type."}, "config": schema.StringAttribute{Computed: true, Description: "Extension subscription JSON configuration."},
+				}},
 			},
 		},
+	}
+}
+
+func warehouseDataSourceString(description string) schema.StringAttribute {
+	return schema.StringAttribute{Computed: true, Description: description}
+}
+func warehouseDataSourceBool(description string) schema.BoolAttribute {
+	return schema.BoolAttribute{Computed: true, Description: description}
+}
+func warehouseDataSourceInt(description string) schema.Int64Attribute {
+	return schema.Int64Attribute{Computed: true, Description: description}
+}
+func warehouseDataSourceStrings(description string) schema.ListAttribute {
+	return schema.ListAttribute{Computed: true, ElementType: types.StringType, Description: description}
+}
+func warehouseDataSourceImageAttributes() map[string]schema.Attribute {
+	return map[string]schema.Attribute{
+		"repo_url": warehouseDataSourceString("Image repository URL."), "semver_constraint": warehouseDataSourceString("Image constraint."), "tag_selection_strategy": warehouseDataSourceString("Image selection strategy."), "platform": warehouseDataSourceString("Image platform."), "allow_tags": warehouseDataSourceString("Deprecated image tag filter."), "allow_tags_regexes": warehouseDataSourceStrings("Image tag inclusion patterns."), "ignore_tags": warehouseDataSourceStrings("Deprecated image tag exclusions."), "ignore_tags_regexes": warehouseDataSourceStrings("Image tag exclusion patterns."), "cache_by_tag": warehouseDataSourceBool("Whether metadata is cached by tag."), "discovery_limit": warehouseDataSourceInt("Image discovery limit."), "insecure_skip_tls_verify": warehouseDataSourceBool("Whether TLS verification is skipped."), "strict_semvers": warehouseDataSourceBool("Whether strict SemVer is required."),
+	}
+}
+func warehouseDataSourceGitAttributes() map[string]schema.Attribute {
+	return map[string]schema.Attribute{
+		"repo_url": warehouseDataSourceString("Git repository URL."), "branch": warehouseDataSourceString("Git branch."), "semver_constraint": warehouseDataSourceString("Git SemVer constraint."), "commit_selection_strategy": warehouseDataSourceString("Git commit selection strategy."), "allow_tags": warehouseDataSourceString("Deprecated Git tag filter."), "allow_tags_regexes": warehouseDataSourceStrings("Git tag inclusion patterns."), "ignore_tags": warehouseDataSourceStrings("Deprecated Git tag exclusions."), "ignore_tags_regexes": warehouseDataSourceStrings("Git tag exclusion patterns."), "include_paths": warehouseDataSourceStrings("Git path inclusions."), "exclude_paths": warehouseDataSourceStrings("Git path exclusions."), "expression_filter": warehouseDataSourceString("Git expression filter."), "since": warehouseDataSourceString("Git discovery cutoff."), "blobless": warehouseDataSourceBool("Whether blobless cloning is enabled."), "discovery_limit": warehouseDataSourceInt("Git discovery limit."), "insecure_skip_tls_verify": warehouseDataSourceBool("Whether TLS verification is skipped."), "strict_semvers": warehouseDataSourceBool("Whether strict SemVer is required."),
+	}
+}
+func warehouseDataSourceChartAttributes() map[string]schema.Attribute {
+	return map[string]schema.Attribute{
+		"repo_url": warehouseDataSourceString("Chart repository URL."), "name": warehouseDataSourceString("Chart name."), "semver_constraint": warehouseDataSourceString("Chart SemVer constraint."), "discovery_limit": warehouseDataSourceInt("Chart discovery limit."), "insecure_skip_tls_verify": warehouseDataSourceBool("Whether TLS verification is skipped."),
 	}
 }
 
@@ -377,42 +396,15 @@ func flattenWarehouseDataSource(project string, warehouse *client.Warehouse, fre
 		Project:      types.StringValue(resolvedProject),
 		Name:         types.StringValue(warehouse.Metadata.Name),
 		ID:           types.StringValue(warehouseID(resolvedProject, warehouse.Metadata.Name)),
-		Subscription: flattenWarehouseDataSourceSubscriptions(warehouse.Spec.Subscriptions),
+		Subscription: flattenWarehouseDataSourceSubscriptions(resolvedProject, warehouse),
 		Status:       flattenWarehouseDataSourceStatus(warehouse.Status),
 		Freight:      flattenWarehouseDataSourceFreight(warehouse.Status.LastFreightID, freight),
 	}
 	return data
 }
 
-func flattenWarehouseDataSourceSubscriptions(subs []client.WarehouseSubscription) []WarehouseSubscriptionModel {
-	result := make([]WarehouseSubscriptionModel, 0, len(subs))
-	for _, sub := range subs {
-		flattened := WarehouseSubscriptionModel{}
-		if sub.Image != nil {
-			flattened.Image = &WarehouseImageSubscriptionModel{
-				RepoURL:              types.StringValue(sub.Image.RepoURL),
-				SemverConstraint:     computedStringValue(sub.Image.Constraint),
-				TagSelectionStrategy: computedStringValue(sub.Image.ImageSelectionStrategy),
-				Platform:             computedStringValue(sub.Image.Platform),
-			}
-		}
-		if sub.Git != nil {
-			flattened.Git = &WarehouseGitSubscriptionModel{
-				RepoURL:          types.StringValue(sub.Git.RepoURL),
-				Branch:           computedStringValue(sub.Git.Branch),
-				SemverConstraint: computedStringValue(sub.Git.SemverConstraint),
-			}
-		}
-		if sub.Chart != nil {
-			flattened.Chart = &WarehouseChartSubscriptionModel{
-				RepoURL:          types.StringValue(sub.Chart.RepoURL),
-				Name:             computedStringValue(sub.Chart.Name),
-				SemverConstraint: computedStringValue(sub.Chart.SemverConstraint),
-			}
-		}
-		result = append(result, flattened)
-	}
-	return result
+func flattenWarehouseDataSourceSubscriptions(project string, warehouse *client.Warehouse) []WarehouseSubscriptionModel {
+	return flattenWarehouse(project, warehouse, nil).Subscription
 }
 
 func flattenWarehouseDataSourceStatus(status client.WarehouseStatus) *WarehouseDataSourceStatusModel {

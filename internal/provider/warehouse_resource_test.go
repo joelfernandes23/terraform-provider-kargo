@@ -133,7 +133,7 @@ func TestExpandWarehouseSpecRequiresExactlyOneSubscriptionKind(t *testing.T) {
 	}
 
 	_, err = expandWarehouseSpec([]WarehouseSubscriptionModel{{}})
-	if err == nil || !strings.Contains(err.Error(), "exactly one of image, git, or chart") {
+	if err == nil || !strings.Contains(err.Error(), "exactly one of image, git, chart, or generic") {
 		t.Fatalf("expected exactly-one error, got %v", err)
 	}
 
@@ -141,7 +141,7 @@ func TestExpandWarehouseSpecRequiresExactlyOneSubscriptionKind(t *testing.T) {
 		Image: &WarehouseImageSubscriptionModel{RepoURL: types.StringValue("ghcr.io/example/app")},
 		Git:   &WarehouseGitSubscriptionModel{RepoURL: types.StringValue("https://github.com/example/repo.git")},
 	}})
-	if err == nil || !strings.Contains(err.Error(), "exactly one of image, git, or chart") {
+	if err == nil || !strings.Contains(err.Error(), "exactly one of image, git, chart, or generic") {
 		t.Fatalf("expected exactly-one error, got %v", err)
 	}
 }
@@ -175,6 +175,47 @@ func TestExpandWarehouseSpecMapsImageFields(t *testing.T) {
 	}
 }
 
+func TestExpandWarehouseResourcePreservesEveryWarehouseSetting(t *testing.T) {
+	data := &WarehouseResourceModel{
+		Shard: types.StringValue("edge"), Interval: types.StringValue("10m"),
+		FreightCreationPolicy: types.StringValue("Manual"), FreightCreationCriteria: types.StringValue("has(artifacts)"),
+		Subscription: []WarehouseSubscriptionModel{
+			{Name: types.StringValue("image"), Image: &WarehouseImageSubscriptionModel{RepoURL: types.StringValue("ghcr.io/example/app"), SemverConstraint: types.StringValue("^1.0.0"), TagSelectionStrategy: types.StringValue("SemVer"), Platform: types.StringValue("linux/amd64"), AllowTagsRegexes: stringList([]string{"^v"}), IgnoreTagsRegexes: stringList([]string{"-rc$"}), CacheByTag: types.BoolValue(true), DiscoveryLimit: types.Int64Value(25), InsecureSkipTLSVerify: types.BoolValue(true), StrictSemvers: types.BoolValue(false)}},
+			{Name: types.StringValue("git"), Git: &WarehouseGitSubscriptionModel{RepoURL: types.StringValue("https://example.test/repo.git"), Branch: types.StringValue("main"), CommitSelectionStrategy: types.StringValue("NewestFromBranch"), IncludePaths: stringList([]string{"apps/**"}), ExcludePaths: stringList([]string{"docs/**"}), ExpressionFilter: types.StringValue("commit.author != ''"), Since: types.StringValue("2026-01-01T00:00:00Z"), Blobless: types.BoolValue(true), DiscoveryLimit: types.Int64Value(40), InsecureSkipTLSVerify: types.BoolValue(true)}},
+			{Name: types.StringValue("chart"), Chart: &WarehouseChartSubscriptionModel{RepoURL: types.StringValue("oci://registry.example/chart"), DiscoveryLimit: types.Int64Value(10), InsecureSkipTLSVerify: types.BoolValue(true)}},
+			{Name: types.StringValue("custom"), Generic: &WarehouseGenericSubscriptionModel{Type: types.StringValue("npm"), Config: types.StringValue(`{"package":"example","registry":"https://npm.example"}`)}},
+		},
+	}
+
+	spec, err := expandWarehouseResource(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if spec.Shard != "edge" || spec.Interval != "10m" || spec.FreightCreationPolicy != "Manual" || spec.FreightCreationCriteria.Expression != "has(artifacts)" {
+		t.Fatalf("warehouse-level fields were lost: %#v", spec)
+	}
+	image, git, chart, generic := spec.Subscriptions[0].Image, spec.Subscriptions[1].Git, spec.Subscriptions[2].Chart, spec.Subscriptions[3].Generic
+	if image.DiscoveryLimit == nil || *image.DiscoveryLimit != 25 || !*image.CacheByTag || *image.StrictSemvers || len(image.AllowTagsRegexes) != 1 {
+		t.Fatalf("image fields were lost: %#v", image)
+	}
+	if git.CommitSelectionStrategy != "NewestFromBranch" || git.DiscoveryLimit == nil || *git.DiscoveryLimit != 40 || !*git.Blobless || len(git.IncludePaths) != 1 || git.Since == "" {
+		t.Fatalf("git fields were lost: %#v", git)
+	}
+	if chart.DiscoveryLimit == nil || *chart.DiscoveryLimit != 10 || !*chart.InsecureSkipTLSVerify {
+		t.Fatalf("chart fields were lost: %#v", chart)
+	}
+	if generic.Type != "npm" || string(generic.Config) != `{"package":"example","registry":"https://npm.example"}` {
+		t.Fatalf("generic subscription was lost: %#v", generic)
+	}
+}
+
+func TestExpandWarehouseResourceRejectsInvalidGenericJSON(t *testing.T) {
+	_, err := expandWarehouseResource(&WarehouseResourceModel{Subscription: []WarehouseSubscriptionModel{{Generic: &WarehouseGenericSubscriptionModel{Type: types.StringValue("npm"), Config: types.StringValue("[]")}}}})
+	if err == nil || !strings.Contains(err.Error(), "JSON object") {
+		t.Fatalf("expected JSON object error, got %v", err)
+	}
+}
+
 func TestExpandWarehouseSpecRequiresRepoURLForSelectedKind(t *testing.T) {
 	for name, sub := range map[string]WarehouseSubscriptionModel{
 		"image": {Image: &WarehouseImageSubscriptionModel{RepoURL: types.StringNull()}},
@@ -190,12 +231,13 @@ func TestExpandWarehouseSpecRequiresRepoURLForSelectedKind(t *testing.T) {
 	}
 }
 
-func TestExpandWarehouseSpecMapsGitSemverStrategy(t *testing.T) {
+func TestExpandWarehouseSpecPreservesGitSelectionStrategy(t *testing.T) {
 	spec, err := expandWarehouseSpec([]WarehouseSubscriptionModel{{
 		Git: &WarehouseGitSubscriptionModel{
-			RepoURL:          types.StringValue("https://github.com/example/repo.git"),
-			Branch:           types.StringValue("main"),
-			SemverConstraint: types.StringValue("^1.0.0"),
+			RepoURL:                 types.StringValue("https://github.com/example/repo.git"),
+			Branch:                  types.StringValue("main"),
+			SemverConstraint:        types.StringValue("^1.0.0"),
+			CommitSelectionStrategy: types.StringValue("SemVer"),
 		},
 	}})
 	if err != nil {
@@ -467,6 +509,27 @@ func TestAccWarehouseResource_multipleSubscriptions(t *testing.T) {
 	})
 }
 
+func TestAccWarehouseResource_completeSpecRoundTrip(t *testing.T) {
+	srv := testWarehouseServer(t)
+	defer srv.Close()
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories(),
+		Steps: []resource.TestStep{{
+			Config: testWarehouseResourceCompleteConfig(srv.URL, "tf-test-project", "complete"),
+			Check: resource.ComposeAggregateTestCheckFunc(
+				resource.TestCheckResourceAttr("kargo_warehouse.test", "shard", "edge"),
+				resource.TestCheckResourceAttr("kargo_warehouse.test", "interval", "10m"),
+				resource.TestCheckResourceAttr("kargo_warehouse.test", "freight_creation_policy", "Manual"),
+				resource.TestCheckResourceAttr("kargo_warehouse.test", "subscription.0.image.discovery_limit", "25"),
+				resource.TestCheckResourceAttr("kargo_warehouse.test", "subscription.1.git.commit_selection_strategy", "NewestFromBranch"),
+				resource.TestCheckResourceAttr("kargo_warehouse.test", "subscription.1.git.include_paths.0", "apps/**"),
+				resource.TestCheckResourceAttr("kargo_warehouse.test", "subscription.2.chart.discovery_limit", "10"),
+				resource.TestCheckResourceAttr("kargo_warehouse.test", "subscription.3.generic.type", "npm"),
+			),
+		}, {ResourceName: "kargo_warehouse.test", ImportState: true, ImportStateVerify: true}},
+	})
+}
+
 func TestAccWarehouseResource_outOfBandDeletion(t *testing.T) {
 	srv := testWarehouseServer(t)
 	defer srv.Close()
@@ -577,6 +640,62 @@ resource "kargo_warehouse" "test" {
       repo_url          = "https://charts.example.com"
       name              = "app"
       semver_constraint = "^1.0.0"
+    }
+  }
+}
+	`, testWarehouseProviderConfig(url), project, name)
+}
+
+func testWarehouseResourceCompleteConfig(url, project, name string) string {
+	return fmt.Sprintf(`%s
+resource "kargo_warehouse" "test" {
+  project = %q
+  name = %q
+  shard = "edge"
+  interval = "10m"
+  freight_creation_policy = "Manual"
+  freight_creation_criteria = "has(artifacts)"
+
+  subscription {
+    name = "image"
+    image {
+      repo_url = "ghcr.io/example/app"
+      tag_selection_strategy = "SemVer"
+      allow_tags_regexes = ["^v"]
+      cache_by_tag = true
+      discovery_limit = 25
+      insecure_skip_tls_verify = true
+      strict_semvers = false
+    }
+  }
+  subscription {
+    name = "git"
+    git {
+      repo_url = "https://example.test/repo.git"
+      branch = "main"
+      commit_selection_strategy = "NewestFromBranch"
+      include_paths = ["apps/**"]
+      exclude_paths = ["docs/**"]
+      expression_filter = "commit.author != ''"
+      since = "2026-01-01T00:00:00Z"
+      blobless = true
+      discovery_limit = 40
+      insecure_skip_tls_verify = true
+    }
+  }
+  subscription {
+    name = "chart"
+    chart {
+      repo_url = "oci://registry.example/chart"
+      discovery_limit = 10
+      insecure_skip_tls_verify = true
+    }
+  }
+  subscription {
+    name = "custom"
+    generic {
+      type = "npm"
+      config = jsonencode({ package = "example" })
     }
   }
 }
