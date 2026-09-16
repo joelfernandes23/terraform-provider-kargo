@@ -191,6 +191,7 @@ Read-Only:
 Read-Only:
 
 - `config` (String) Extension subscription JSON configuration.
+- `discovery_limit` (Number) Maximum number of artifacts to discover.
 - `type` (String) Kargo extension subscription type.
 
 

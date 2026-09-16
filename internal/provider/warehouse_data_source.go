@@ -208,6 +208,7 @@ func warehouseDataSourceSubscriptionAttribute() schema.Attribute {
 				},
 				"generic": schema.SingleNestedAttribute{Computed: true, Description: "Extension subscription.", Attributes: map[string]schema.Attribute{
 					"type": schema.StringAttribute{Computed: true, Description: "Kargo extension subscription type."}, "config": schema.StringAttribute{Computed: true, Description: "Extension subscription JSON configuration."},
+					"discovery_limit": schema.Int64Attribute{Computed: true, Description: "Maximum number of artifacts to discover."},
 				}},
 			},
 		},

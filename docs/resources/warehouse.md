@@ -51,7 +51,7 @@ resource "kargo_warehouse" "example" {
 
 ## Subscription Types
 
-Each `subscription` block defines exactly one source: `image`, `git`, `chart`, or `generic`. `generic` represents a Kargo extension subscription and requires its type and JSON object configuration.
+Each `subscription` block defines exactly one source: `image`, `git`, `chart`, or `generic`. `generic` represents a Kargo extension subscription and requires its type, a unique subscription name, and JSON object configuration. Subscription names apply only to generic subscriptions.
 
 Subscription order is retained by Kargo and Terraform.
 
@@ -92,7 +92,7 @@ Optional:
 - `generic` (Block, Optional) Subscription implemented by a Kargo extension. (see [below for nested schema](#nestedblock--subscription--generic))
 - `git` (Block, Optional) Git repository subscription. (see [below for nested schema](#nestedblock--subscription--git))
 - `image` (Block, Optional) Container image repository subscription. (see [below for nested schema](#nestedblock--subscription--image))
-- `name` (String) Optional unique subscription name.
+- `name` (String) Unique subscription name. Required for generic subscriptions; not supported for image, Git, or chart subscriptions.
 
 <a id="nestedblock--subscription--chart"></a>
 ### Nested Schema for `subscription.chart`
@@ -112,6 +112,7 @@ Optional:
 Optional:
 
 - `config` (String) JSON object understood by the selected Kargo subscription type.
+- `discovery_limit` (Number) Maximum number of artifacts to discover. Supported values are 1 through 100. Defaults to 20.
 - `type` (String) Kargo subscription type. Required when generic is set.
 
 

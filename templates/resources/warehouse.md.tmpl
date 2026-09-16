@@ -15,7 +15,7 @@ A Warehouse defines artifact subscriptions that Kargo uses to create Freight. `p
 
 ## Subscription Types
 
-Each `subscription` block defines exactly one source: `image`, `git`, `chart`, or `generic`. `generic` represents a Kargo extension subscription and requires its type and JSON object configuration.
+Each `subscription` block defines exactly one source: `image`, `git`, `chart`, or `generic`. `generic` represents a Kargo extension subscription and requires its type, a unique subscription name, and JSON object configuration. Subscription names apply only to generic subscriptions.
 
 Subscription order is retained by Kargo and Terraform.
 

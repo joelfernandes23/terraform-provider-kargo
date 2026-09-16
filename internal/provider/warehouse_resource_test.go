@@ -177,12 +177,12 @@ func TestExpandWarehouseSpecMapsImageFields(t *testing.T) {
 
 func TestExpandWarehouseResourcePreservesEveryWarehouseSetting(t *testing.T) {
 	data := &WarehouseResourceModel{
-		Shard: types.StringValue("edge"), Interval: types.StringValue("10m"),
+		Shard: types.StringValue("edge"), Interval: durationValue{StringValue: types.StringValue("10m")},
 		FreightCreationPolicy: types.StringValue("Manual"), FreightCreationCriteria: types.StringValue("has(artifacts)"),
 		Subscription: []WarehouseSubscriptionModel{
-			{Name: types.StringValue("image"), Image: &WarehouseImageSubscriptionModel{RepoURL: types.StringValue("ghcr.io/example/app"), SemverConstraint: types.StringValue("^1.0.0"), TagSelectionStrategy: types.StringValue("SemVer"), Platform: types.StringValue("linux/amd64"), AllowTagsRegexes: stringList([]string{"^v"}), IgnoreTagsRegexes: stringList([]string{"-rc$"}), CacheByTag: types.BoolValue(true), DiscoveryLimit: types.Int64Value(25), InsecureSkipTLSVerify: types.BoolValue(true), StrictSemvers: types.BoolValue(false)}},
-			{Name: types.StringValue("git"), Git: &WarehouseGitSubscriptionModel{RepoURL: types.StringValue("https://example.test/repo.git"), Branch: types.StringValue("main"), CommitSelectionStrategy: types.StringValue("NewestFromBranch"), IncludePaths: stringList([]string{"apps/**"}), ExcludePaths: stringList([]string{"docs/**"}), ExpressionFilter: types.StringValue("commit.author != ''"), Since: types.StringValue("2026-01-01T00:00:00Z"), Blobless: types.BoolValue(true), DiscoveryLimit: types.Int64Value(40), InsecureSkipTLSVerify: types.BoolValue(true)}},
-			{Name: types.StringValue("chart"), Chart: &WarehouseChartSubscriptionModel{RepoURL: types.StringValue("oci://registry.example/chart"), DiscoveryLimit: types.Int64Value(10), InsecureSkipTLSVerify: types.BoolValue(true)}},
+			{Image: &WarehouseImageSubscriptionModel{RepoURL: types.StringValue("ghcr.io/example/app"), SemverConstraint: types.StringValue("^1.0.0"), TagSelectionStrategy: types.StringValue("SemVer"), Platform: types.StringValue("linux/amd64"), AllowTagsRegexes: stringList([]string{"^v"}), IgnoreTagsRegexes: stringList([]string{"-rc$"}), CacheByTag: types.BoolValue(true), DiscoveryLimit: types.Int64Value(25), InsecureSkipTLSVerify: types.BoolValue(true), StrictSemvers: types.BoolValue(false)}},
+			{Git: &WarehouseGitSubscriptionModel{RepoURL: types.StringValue("https://example.test/repo.git"), Branch: types.StringValue("main"), CommitSelectionStrategy: types.StringValue("NewestFromBranch"), IncludePaths: stringList([]string{"apps/**"}), ExcludePaths: stringList([]string{"docs/**"}), ExpressionFilter: types.StringValue("commit.author != ''"), Since: types.StringValue("2026-01-01T00:00:00Z"), Blobless: types.BoolValue(true), DiscoveryLimit: types.Int64Value(40), InsecureSkipTLSVerify: types.BoolValue(true)}},
+			{Chart: &WarehouseChartSubscriptionModel{RepoURL: types.StringValue("oci://registry.example/chart"), DiscoveryLimit: types.Int64Value(10), InsecureSkipTLSVerify: types.BoolValue(true)}},
 			{Name: types.StringValue("custom"), Generic: &WarehouseGenericSubscriptionModel{Type: types.StringValue("npm"), Config: types.StringValue(`{"package":"example","registry":"https://npm.example"}`)}},
 		},
 	}
@@ -210,9 +210,29 @@ func TestExpandWarehouseResourcePreservesEveryWarehouseSetting(t *testing.T) {
 }
 
 func TestExpandWarehouseResourceRejectsInvalidGenericJSON(t *testing.T) {
-	_, err := expandWarehouseResource(&WarehouseResourceModel{Subscription: []WarehouseSubscriptionModel{{Generic: &WarehouseGenericSubscriptionModel{Type: types.StringValue("npm"), Config: types.StringValue("[]")}}}})
-	if err == nil || !strings.Contains(err.Error(), "JSON object") {
-		t.Fatalf("expected JSON object error, got %v", err)
+	for _, config := range []string{"[]", "null", "true", "1", `"text"`, "{"} {
+		t.Run(config, func(t *testing.T) {
+			_, err := expandWarehouseResource(&WarehouseResourceModel{Subscription: []WarehouseSubscriptionModel{{Generic: &WarehouseGenericSubscriptionModel{Type: types.StringValue("npm"), Config: types.StringValue(config)}}}})
+			if err == nil || !strings.Contains(err.Error(), "JSON object") {
+				t.Fatalf("expected JSON object error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestExpandWarehouseRejectsInvalidSubscriptionNames(t *testing.T) {
+	valid := WarehouseSubscriptionModel{Name: types.StringValue("packages"), Generic: &WarehouseGenericSubscriptionModel{Type: types.StringValue("npm"), Config: types.StringValue(`{}`)}}
+	for name, subs := range map[string][]WarehouseSubscriptionModel{
+		"duplicate": {valid, valid},
+		"missing":   {{Generic: valid.Generic}},
+		"legacy":    {{Name: types.StringValue("source"), Git: &WarehouseGitSubscriptionModel{RepoURL: types.StringValue("https://example.com/repo")}}},
+		"reserved":  {{Name: valid.Name, Generic: &WarehouseGenericSubscriptionModel{Type: types.StringValue("git"), Config: types.StringValue(`{}`)}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := expandWarehouseSpec(subs); err == nil {
+				t.Fatal("expected invalid subscription to be rejected")
+			}
+		})
 	}
 }
 
@@ -257,7 +277,7 @@ func TestExpandWarehouseSpecPreservesGitSelectionStrategy(t *testing.T) {
 	}
 }
 
-func TestFlattenWarehousePreservesOmittedOptionalFields(t *testing.T) {
+func TestFlattenWarehouseReadsComputedServerFields(t *testing.T) {
 	prior := &WarehouseResourceModel{
 		Project: types.StringValue("demo"),
 		Name:    types.StringValue("app"),
@@ -286,14 +306,14 @@ func TestFlattenWarehousePreservesOmittedOptionalFields(t *testing.T) {
 
 	flattened := flattenWarehouse("demo", warehouse, prior)
 	image := flattened.Subscription[0].Image
-	if !image.SemverConstraint.IsNull() {
-		t.Errorf("expected omitted semver constraint to stay null, got %s", image.SemverConstraint)
+	if image.SemverConstraint.ValueString() != "^1.0.0" {
+		t.Errorf("expected server semver constraint, got %s", image.SemverConstraint)
 	}
-	if !image.TagSelectionStrategy.IsNull() {
-		t.Errorf("expected omitted tag selection strategy to stay null, got %s", image.TagSelectionStrategy)
+	if image.TagSelectionStrategy.ValueString() != "SemVer" {
+		t.Errorf("expected server tag selection strategy, got %s", image.TagSelectionStrategy)
 	}
-	if !image.Platform.IsNull() {
-		t.Errorf("expected omitted platform to stay null, got %s", image.Platform)
+	if image.Platform.ValueString() != "linux/amd64" {
+		t.Errorf("expected server platform, got %s", image.Platform)
 	}
 
 	imported := flattenWarehouse("demo", warehouse, nil)
@@ -365,7 +385,12 @@ func testWarehouseServer(t *testing.T) *warehouseTestServer {
 				_, _ = fmt.Fprint(w, `{"code":"not_found","message":"warehouse not found"}`)
 				return
 			}
-			assertNoError(t, json.NewEncoder(w).Encode(map[string]any{"warehouse": warehouse}))
+			if body["format"] != "RAW_FORMAT_JSON" {
+				t.Errorf("expected raw JSON request, got %q", body["format"])
+			}
+			raw, err := json.Marshal(warehouse)
+			assertNoError(t, err)
+			assertNoError(t, json.NewEncoder(w).Encode(map[string]any{"raw": raw}))
 		case endsWith(r.URL.Path, "/DeleteWarehouse"):
 			var body map[string]string
 			assertNoError(t, json.NewDecoder(r.Body).Decode(&body))
@@ -657,7 +682,6 @@ resource "kargo_warehouse" "test" {
   freight_creation_criteria = "has(artifacts)"
 
   subscription {
-    name = "image"
     image {
       repo_url = "ghcr.io/example/app"
       tag_selection_strategy = "SemVer"
@@ -669,7 +693,6 @@ resource "kargo_warehouse" "test" {
     }
   }
   subscription {
-    name = "git"
     git {
       repo_url = "https://example.test/repo.git"
       branch = "main"
@@ -684,7 +707,6 @@ resource "kargo_warehouse" "test" {
     }
   }
   subscription {
-    name = "chart"
     chart {
       repo_url = "oci://registry.example/chart"
       discovery_limit = 10
