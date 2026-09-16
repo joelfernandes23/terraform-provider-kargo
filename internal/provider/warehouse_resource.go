@@ -187,8 +187,8 @@ func optionalWarehouseStrings(description string) schema.ListAttribute {
 
 func warehouseImageAttributes() map[string]schema.Attribute {
 	return map[string]schema.Attribute{
-		"repo_url":                 optionalWarehouseString("Image repository URL without a tag. Required when image is set."),
-		"semver_constraint":        optionalWarehouseString("Selection-strategy constraint for image tags."),
+		"repo_url":                 optionalWarehouseString("The image repository URL without a tag. Required when image is set."),
+		"semver_constraint":        optionalWarehouseString("SemVer constraint for acceptable image tags."),
 		"tag_selection_strategy":   schema.StringAttribute{Optional: true, Computed: true, Description: "Image tag selection strategy.", Validators: []validator.String{stringvalidator.OneOf("Digest", "Lexical", "NewestBuild", "SemVer")}},
 		"platform":                 optionalWarehouseString("Target image platform, such as linux/amd64."),
 		"allow_tags":               optionalWarehouseString("Deprecated regular expression for image tags to include."),
@@ -204,9 +204,9 @@ func warehouseImageAttributes() map[string]schema.Attribute {
 
 func warehouseGitAttributes() map[string]schema.Attribute {
 	return map[string]schema.Attribute{
-		"repo_url":                  optionalWarehouseString("Git repository URL. Required when git is set."),
+		"repo_url":                  optionalWarehouseString("The Git repository URL. Required when git is set."),
 		"branch":                    optionalWarehouseString("Branch to watch."),
-		"semver_constraint":         optionalWarehouseString("Constraint for SemVer commit selection."),
+		"semver_constraint":         optionalWarehouseString("SemVer constraint for acceptable Git tags."),
 		"commit_selection_strategy": schema.StringAttribute{Optional: true, Computed: true, Description: "Strategy for selecting commits.", Validators: []validator.String{stringvalidator.OneOf("Lexical", "NewestFromBranch", "NewestTag", "SemVer")}},
 		"allow_tags":                optionalWarehouseString("Deprecated regular expression for Git tags to include."),
 		"allow_tags_regexes":        optionalWarehouseStrings("Regular expressions for Git tags to include."),
@@ -225,9 +225,9 @@ func warehouseGitAttributes() map[string]schema.Attribute {
 
 func warehouseChartAttributes() map[string]schema.Attribute {
 	return map[string]schema.Attribute{
-		"repo_url":                 optionalWarehouseString("Helm chart repository URL. Required when chart is set."),
-		"name":                     optionalWarehouseString("Chart name for a classic chart repository."),
-		"semver_constraint":        optionalWarehouseString("Constraint for chart versions."),
+		"repo_url":                 optionalWarehouseString("The Helm chart repository URL. Required when chart is set."),
+		"name":                     optionalWarehouseString("The chart name for classic chart repositories."),
+		"semver_constraint":        optionalWarehouseString("SemVer constraint for acceptable chart versions."),
 		"discovery_limit":          optionalWarehouseInt("Maximum number of chart versions to discover."),
 		"insecure_skip_tls_verify": optionalWarehouseBool("Whether to skip TLS certificate verification."),
 	}

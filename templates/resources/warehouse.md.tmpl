@@ -7,7 +7,7 @@ description: |-
 
 # kargo_warehouse (Resource)
 
-A Warehouse defines artifact subscriptions that Kargo uses to create Freight. `project` and `name` identify the Warehouse. Changing either replaces the resource. Other arguments update it in place.
+Provides a Kargo Warehouse resource. A Warehouse subscribes to container image, Git, and Helm chart repositories and produces Freight from discovered artifacts.
 
 ## Example Usage
 
@@ -15,9 +15,9 @@ A Warehouse defines artifact subscriptions that Kargo uses to create Freight. `p
 
 ## Subscription Types
 
-Each `subscription` block defines exactly one source: `image`, `git`, `chart`, or `generic`. `generic` represents a Kargo extension subscription and requires its type, a unique subscription name, and JSON object configuration. Subscription names apply only to generic subscriptions.
+Each `subscription` block must contain exactly one of `image`, `git`, `chart`, or `generic`.
 
-Subscription order is retained by Kargo and Terraform.
+Subscription order is significant.
 
 ## Import
 

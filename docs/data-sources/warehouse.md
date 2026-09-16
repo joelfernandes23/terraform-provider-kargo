@@ -180,9 +180,9 @@ Read-Only:
 
 - `discovery_limit` (Number) Chart discovery limit.
 - `insecure_skip_tls_verify` (Boolean) Whether TLS verification is skipped.
-- `name` (String) Chart name.
-- `repo_url` (String) Chart repository URL.
-- `semver_constraint` (String) Chart SemVer constraint.
+- `name` (String) The chart name for classic chart repositories.
+- `repo_url` (String) The Helm chart repository URL.
+- `semver_constraint` (String) SemVer constraint for acceptable chart versions.
 
 
 <a id="nestedatt--subscription--generic"></a>
@@ -203,7 +203,7 @@ Read-Only:
 - `allow_tags` (String) Deprecated Git tag filter.
 - `allow_tags_regexes` (List of String) Git tag inclusion patterns.
 - `blobless` (Boolean) Whether blobless cloning is enabled.
-- `branch` (String) Git branch.
+- `branch` (String) Branch to watch.
 - `commit_selection_strategy` (String) Git commit selection strategy.
 - `discovery_limit` (Number) Git discovery limit.
 - `exclude_paths` (List of String) Git path exclusions.
@@ -212,8 +212,8 @@ Read-Only:
 - `ignore_tags_regexes` (List of String) Git tag exclusion patterns.
 - `include_paths` (List of String) Git path inclusions.
 - `insecure_skip_tls_verify` (Boolean) Whether TLS verification is skipped.
-- `repo_url` (String) Git repository URL.
-- `semver_constraint` (String) Git SemVer constraint.
+- `repo_url` (String) The Git repository URL.
+- `semver_constraint` (String) SemVer constraint for acceptable Git tags.
 - `since` (String) Git discovery cutoff.
 - `strict_semvers` (Boolean) Whether strict SemVer is required.
 
@@ -230,8 +230,8 @@ Read-Only:
 - `ignore_tags` (List of String) Deprecated image tag exclusions.
 - `ignore_tags_regexes` (List of String) Image tag exclusion patterns.
 - `insecure_skip_tls_verify` (Boolean) Whether TLS verification is skipped.
-- `platform` (String) Image platform.
-- `repo_url` (String) Image repository URL.
-- `semver_constraint` (String) Image constraint.
+- `platform` (String) Target image platform, such as linux/amd64.
+- `repo_url` (String) The image repository URL without a tag.
+- `semver_constraint` (String) SemVer constraint for acceptable image tags.
 - `strict_semvers` (Boolean) Whether strict SemVer is required.
-- `tag_selection_strategy` (String) Image selection strategy.
+- `tag_selection_strategy` (String) Image tag selection strategy.

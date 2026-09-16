@@ -7,7 +7,7 @@ description: |-
 
 # kargo_warehouse (Resource)
 
-A Warehouse defines artifact subscriptions that Kargo uses to create Freight. `project` and `name` identify the Warehouse. Changing either replaces the resource. Other arguments update it in place.
+Provides a Kargo Warehouse resource. A Warehouse subscribes to container image, Git, and Helm chart repositories and produces Freight from discovered artifacts.
 
 ## Example Usage
 
@@ -51,9 +51,9 @@ resource "kargo_warehouse" "example" {
 
 ## Subscription Types
 
-Each `subscription` block defines exactly one source: `image`, `git`, `chart`, or `generic`. `generic` represents a Kargo extension subscription and requires its type, a unique subscription name, and JSON object configuration. Subscription names apply only to generic subscriptions.
+Each `subscription` block must contain exactly one of `image`, `git`, `chart`, or `generic`.
 
-Subscription order is retained by Kargo and Terraform.
+Subscription order is significant.
 
 ## Import
 
@@ -101,9 +101,9 @@ Optional:
 
 - `discovery_limit` (Number) Maximum number of chart versions to discover.
 - `insecure_skip_tls_verify` (Boolean) Whether to skip TLS certificate verification.
-- `name` (String) Chart name for a classic chart repository.
-- `repo_url` (String) Helm chart repository URL. Required when chart is set.
-- `semver_constraint` (String) Constraint for chart versions.
+- `name` (String) The chart name for classic chart repositories.
+- `repo_url` (String) The Helm chart repository URL. Required when chart is set.
+- `semver_constraint` (String) SemVer constraint for acceptable chart versions.
 
 
 <a id="nestedblock--subscription--generic"></a>
@@ -133,8 +133,8 @@ Optional:
 - `ignore_tags_regexes` (List of String) Regular expressions for Git tags to exclude.
 - `include_paths` (List of String) Paths that trigger Freight creation.
 - `insecure_skip_tls_verify` (Boolean) Whether to skip TLS certificate verification.
-- `repo_url` (String) Git repository URL. Required when git is set.
-- `semver_constraint` (String) Constraint for SemVer commit selection.
+- `repo_url` (String) The Git repository URL. Required when git is set.
+- `semver_constraint` (String) SemVer constraint for acceptable Git tags.
 - `since` (String) RFC 3339 cutoff for commit discovery.
 - `strict_semvers` (Boolean) Whether SemVer selection accepts only strict versions.
 
@@ -152,7 +152,7 @@ Optional:
 - `ignore_tags_regexes` (List of String) Regular expressions for tags to exclude.
 - `insecure_skip_tls_verify` (Boolean) Whether to skip TLS certificate verification.
 - `platform` (String) Target image platform, such as linux/amd64.
-- `repo_url` (String) Image repository URL without a tag. Required when image is set.
-- `semver_constraint` (String) Selection-strategy constraint for image tags.
+- `repo_url` (String) The image repository URL without a tag. Required when image is set.
+- `semver_constraint` (String) SemVer constraint for acceptable image tags.
 - `strict_semvers` (Boolean) Whether SemVer selection accepts only strict versions.
 - `tag_selection_strategy` (String) Image tag selection strategy.
