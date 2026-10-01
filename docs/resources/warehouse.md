@@ -51,7 +51,7 @@ resource "kargo_warehouse" "example" {
 
 ## Subscription Types
 
-Each `subscription` block must contain exactly one of `image`, `git`, or `chart`.
+Each `subscription` block must contain exactly one of `image`, `git`, `chart`, or `generic`.
 
 Subscription order is significant.
 
@@ -73,6 +73,10 @@ terraform import kargo_warehouse.example example-project/app
 
 ### Optional
 
+- `freight_creation_criteria` (String) Expression that must evaluate to true before automatic Freight creation.
+- `freight_creation_policy` (String) Whether Kargo creates Freight automatically or manually.
+- `interval` (String) How often Kargo discovers artifacts, such as 5m.
+- `shard` (String) Shard that the warehouse belongs to.
 - `subscription` (Block List) Ordered artifact subscriptions for the warehouse. (see [below for nested schema](#nestedblock--subscription))
 
 ### Read-Only
@@ -85,17 +89,31 @@ terraform import kargo_warehouse.example example-project/app
 Optional:
 
 - `chart` (Block, Optional) Helm chart repository subscription. (see [below for nested schema](#nestedblock--subscription--chart))
+- `generic` (Block, Optional) Subscription implemented by a Kargo extension. (see [below for nested schema](#nestedblock--subscription--generic))
 - `git` (Block, Optional) Git repository subscription. (see [below for nested schema](#nestedblock--subscription--git))
 - `image` (Block, Optional) Container image repository subscription. (see [below for nested schema](#nestedblock--subscription--image))
+- `name` (String) Unique subscription name. Required for generic subscriptions; not supported for image, Git, or chart subscriptions.
 
 <a id="nestedblock--subscription--chart"></a>
 ### Nested Schema for `subscription.chart`
 
 Optional:
 
+- `discovery_limit` (Number) Maximum number of chart versions to discover.
+- `insecure_skip_tls_verify` (Boolean) Whether to skip TLS certificate verification.
 - `name` (String) The chart name for classic chart repositories.
 - `repo_url` (String) The Helm chart repository URL. Required when chart is set.
 - `semver_constraint` (String) SemVer constraint for acceptable chart versions.
+
+
+<a id="nestedblock--subscription--generic"></a>
+### Nested Schema for `subscription.generic`
+
+Optional:
+
+- `config` (String) JSON object understood by the selected Kargo subscription type.
+- `discovery_limit` (Number) Maximum number of artifacts to discover. Supported values are 1 through 100. Defaults to 20.
+- `type` (String) Kargo subscription type. Required when generic is set.
 
 
 <a id="nestedblock--subscription--git"></a>
@@ -103,9 +121,22 @@ Optional:
 
 Optional:
 
+- `allow_tags` (String) Deprecated regular expression for Git tags to include.
+- `allow_tags_regexes` (List of String) Regular expressions for Git tags to include.
+- `blobless` (Boolean) Whether to use blobless Git clones.
 - `branch` (String) Branch to watch.
+- `commit_selection_strategy` (String) Strategy for selecting commits.
+- `discovery_limit` (Number) Maximum number of commits to discover.
+- `exclude_paths` (List of String) Paths that do not trigger Freight creation.
+- `expression_filter` (String) Expression used to filter candidate commits or tags.
+- `ignore_tags` (List of String) Deprecated exact Git tags to exclude.
+- `ignore_tags_regexes` (List of String) Regular expressions for Git tags to exclude.
+- `include_paths` (List of String) Paths that trigger Freight creation.
+- `insecure_skip_tls_verify` (Boolean) Whether to skip TLS certificate verification.
 - `repo_url` (String) The Git repository URL. Required when git is set.
 - `semver_constraint` (String) SemVer constraint for acceptable Git tags.
+- `since` (String) RFC 3339 cutoff for commit discovery.
+- `strict_semvers` (Boolean) Whether SemVer selection accepts only strict versions.
 
 
 <a id="nestedblock--subscription--image"></a>
@@ -113,7 +144,15 @@ Optional:
 
 Optional:
 
+- `allow_tags` (String) Deprecated regular expression for image tags to include.
+- `allow_tags_regexes` (List of String) Regular expressions for tags to include.
+- `cache_by_tag` (Boolean) Whether image metadata is cached by tag.
+- `discovery_limit` (Number) Maximum number of image references to discover.
+- `ignore_tags` (List of String) Deprecated exact image tags to exclude.
+- `ignore_tags_regexes` (List of String) Regular expressions for tags to exclude.
+- `insecure_skip_tls_verify` (Boolean) Whether to skip TLS certificate verification.
 - `platform` (String) Target image platform, such as linux/amd64.
 - `repo_url` (String) The image repository URL without a tag. Required when image is set.
 - `semver_constraint` (String) SemVer constraint for acceptable image tags.
+- `strict_semvers` (Boolean) Whether SemVer selection accepts only strict versions.
 - `tag_selection_strategy` (String) Image tag selection strategy.

@@ -128,7 +128,9 @@ func testWarehouseDataSourceServer(t *testing.T, opts warehouseDataSourceServerO
 				_, _ = fmt.Fprintf(w, `{"code":"not_found","message":"warehouse %q not found"}`, body["name"])
 				return
 			}
-			assertNoError(t, json.NewEncoder(w).Encode(testWarehouseDataSourceWarehouse(body["project"], body["name"])))
+			raw, err := json.Marshal(testWarehouseDataSourceWarehouse(body["project"], body["name"])["warehouse"])
+			assertNoError(t, err)
+			assertNoError(t, json.NewEncoder(w).Encode(map[string]any{"raw": raw}))
 		case endsWith(r.URL.Path, "/QueryFreight"):
 			var body struct {
 				Project string   `json:"project"`

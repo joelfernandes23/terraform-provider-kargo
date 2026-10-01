@@ -9,6 +9,18 @@ import (
 	"testing"
 )
 
+type testRawWarehouseResponse struct {
+	Warehouse Warehouse
+}
+
+func (r testRawWarehouseResponse) MarshalJSON() ([]byte, error) {
+	raw, err := json.Marshal(r.Warehouse)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(getWarehouseResponse{Raw: raw})
+}
+
 func TestCreateWarehouse(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		callCount := 0
@@ -50,7 +62,7 @@ func TestCreateWarehouse(t *testing.T) {
 			}
 
 			assertSuffix(t, r.URL.Path, "/GetWarehouse")
-			assertNoError(t, json.NewEncoder(w).Encode(getWarehouseResponse{
+			assertNoError(t, json.NewEncoder(w).Encode(testRawWarehouseResponse{
 				Warehouse: Warehouse{
 					Metadata: WarehouseMetadata{Name: "app", Namespace: "demo", UID: "uid-123"},
 				},
@@ -97,11 +109,76 @@ func TestCreateWarehouse(t *testing.T) {
 	})
 }
 
+func TestWarehouseRejectsInvalidManifestBeforeRequest(t *testing.T) {
+	for _, operation := range []string{"create", "update"} {
+		t.Run(operation, func(t *testing.T) {
+			c, srv := testClientWithServer(t, func(w http.ResponseWriter, r *http.Request) {
+				t.Error("invalid manifest must not reach the API")
+				w.WriteHeader(http.StatusInternalServerError)
+			})
+			defer srv.Close()
+			spec := WarehouseSpec{Subscriptions: []WarehouseSubscription{{
+				Generic: &GenericSubscription{Type: "custom", Config: json.RawMessage(`{"invalid":`)},
+			}}}
+			var err error
+			if operation == "create" {
+				_, err = c.CreateWarehouse(context.Background(), "demo", "app", spec)
+			} else {
+				_, err = c.UpdateWarehouse(context.Background(), "demo", "app", spec)
+			}
+			assertErrorContains(t, err, "encoding warehouse")
+		})
+	}
+}
+
+func TestWarehouseManifestRoundTripsCompleteSpec(t *testing.T) {
+	limit := int64(12)
+	value := true
+	spec := WarehouseSpec{
+		Shard: "edge", Interval: "10m", FreightCreationPolicy: "Manual", FreightCreationCriteria: &FreightCreationCriteria{Expression: "has(artifacts)"},
+		Subscriptions: []WarehouseSubscription{
+			{Image: &ImageSubscription{RepoURL: "ghcr.io/example/app", AllowTags: "^v", IgnoreTags: []string{"skip"}, AllowTagsRegexes: []string{"^v"}, CacheByTag: &value, DiscoveryLimit: &limit, StrictSemvers: &value}},
+			{Git: &GitSubscription{RepoURL: "https://example.test/repo.git", AllowTags: "^v", IgnoreTags: []string{"skip"}, CommitSelectionStrategy: "NewestFromBranch", IncludePaths: []string{"apps/**"}, Blobless: &value, DiscoveryLimit: &limit}},
+			{Chart: &ChartSubscription{RepoURL: "oci://registry.example/chart", DiscoveryLimit: &limit, InsecureSkipTLSVerify: &value}},
+			{Name: "custom", Generic: &GenericSubscription{Type: "npm", Config: json.RawMessage(`{"package":"example"}`)}},
+		},
+	}
+	manifest, err := marshalWarehouseManifest("demo", "app", spec)
+	assertNoError(t, err)
+	var decoded struct {
+		Spec WarehouseSpec `json:"spec"`
+	}
+	if err := json.Unmarshal(manifest, &decoded); err != nil {
+		t.Fatalf("unmarshalling manifest: %v", err)
+	}
+	if decoded.Spec.Shard != "edge" || decoded.Spec.Interval != "10m" || decoded.Spec.FreightCreationCriteria == nil {
+		t.Fatalf("warehouse-level fields lost: %#v", decoded.Spec)
+	}
+	if decoded.Spec.Subscriptions[0].Image.DiscoveryLimit == nil || *decoded.Spec.Subscriptions[0].Image.DiscoveryLimit != limit {
+		t.Fatal("image fields lost")
+	}
+	if decoded.Spec.Subscriptions[0].Image.AllowTags != "^v" || len(decoded.Spec.Subscriptions[0].Image.IgnoreTags) != 1 {
+		t.Fatal("deprecated image tag fields lost")
+	}
+	if decoded.Spec.Subscriptions[1].Git.CommitSelectionStrategy != "NewestFromBranch" || !*decoded.Spec.Subscriptions[1].Git.Blobless {
+		t.Fatal("git fields lost")
+	}
+	if decoded.Spec.Subscriptions[1].Git.AllowTags != "^v" || len(decoded.Spec.Subscriptions[1].Git.IgnoreTags) != 1 {
+		t.Fatal("deprecated Git tag fields lost")
+	}
+	if decoded.Spec.Subscriptions[2].Chart.DiscoveryLimit == nil || !*decoded.Spec.Subscriptions[2].Chart.InsecureSkipTLSVerify {
+		t.Fatal("chart fields lost")
+	}
+	if decoded.Spec.Subscriptions[3].Generic == nil || decoded.Spec.Subscriptions[3].Generic.Type != "npm" {
+		t.Fatalf("generic subscription lost: %#v", decoded.Spec.Subscriptions[3])
+	}
+}
+
 func TestGetWarehouse(t *testing.T) {
 	t.Run("exists", func(t *testing.T) {
 		c, srv := testClientWithServer(t, func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			assertNoError(t, json.NewEncoder(w).Encode(getWarehouseResponse{
+			assertNoError(t, json.NewEncoder(w).Encode(testRawWarehouseResponse{
 				Warehouse: Warehouse{
 					Metadata: WarehouseMetadata{Name: "app", Namespace: "demo", UID: "uid-456"},
 					Status: WarehouseStatus{
@@ -122,7 +199,7 @@ func TestGetWarehouse(t *testing.T) {
 	t.Run("being deleted returns nil", func(t *testing.T) {
 		c, srv := testClientWithServer(t, func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"warehouse":{"metadata":{"name":"dying","deletionTimestamp":"2026-04-28T00:00:00Z"}}}`))
+			assertNoError(t, json.NewEncoder(w).Encode(getWarehouseResponse{Raw: []byte(`{"metadata":{"name":"dying","deletionTimestamp":"2026-04-28T00:00:00Z"}}`)}))
 		})
 		defer srv.Close()
 
@@ -151,10 +228,12 @@ func TestGetWarehouse(t *testing.T) {
 func TestGetWarehouseDecodesExtendedStatusFixture(t *testing.T) {
 	fixture, err := os.ReadFile("testdata/warehouse_response.json")
 	assertNoError(t, err)
+	var response map[string]json.RawMessage
+	assertNoError(t, json.Unmarshal(fixture, &response))
 
 	c, srv := testClientWithServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(fixture)
+		assertNoError(t, json.NewEncoder(w).Encode(getWarehouseResponse{Raw: response["warehouse"]}))
 	})
 	defer srv.Close()
 
@@ -400,7 +479,7 @@ func TestUpdateWarehouse(t *testing.T) {
 			}
 
 			assertSuffix(t, r.URL.Path, "/GetWarehouse")
-			assertNoError(t, json.NewEncoder(w).Encode(getWarehouseResponse{
+			assertNoError(t, json.NewEncoder(w).Encode(testRawWarehouseResponse{
 				Warehouse: Warehouse{
 					Metadata: WarehouseMetadata{Name: "app", Namespace: "demo"},
 				},

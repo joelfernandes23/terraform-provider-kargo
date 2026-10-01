@@ -2,14 +2,19 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -26,35 +31,70 @@ type WarehouseResource struct {
 }
 
 type WarehouseResourceModel struct {
-	Project      types.String                 `tfsdk:"project"`
-	Name         types.String                 `tfsdk:"name"`
-	ID           types.String                 `tfsdk:"id"`
-	Subscription []WarehouseSubscriptionModel `tfsdk:"subscription"`
+	Project                 types.String                 `tfsdk:"project"`
+	Name                    types.String                 `tfsdk:"name"`
+	ID                      types.String                 `tfsdk:"id"`
+	Shard                   types.String                 `tfsdk:"shard"`
+	Interval                durationValue                `tfsdk:"interval"`
+	FreightCreationPolicy   types.String                 `tfsdk:"freight_creation_policy"`
+	FreightCreationCriteria types.String                 `tfsdk:"freight_creation_criteria"`
+	Subscription            []WarehouseSubscriptionModel `tfsdk:"subscription"`
 }
 
 type WarehouseSubscriptionModel struct {
-	Image *WarehouseImageSubscriptionModel `tfsdk:"image"`
-	Git   *WarehouseGitSubscriptionModel   `tfsdk:"git"`
-	Chart *WarehouseChartSubscriptionModel `tfsdk:"chart"`
+	Name    types.String                       `tfsdk:"name"`
+	Image   *WarehouseImageSubscriptionModel   `tfsdk:"image"`
+	Git     *WarehouseGitSubscriptionModel     `tfsdk:"git"`
+	Chart   *WarehouseChartSubscriptionModel   `tfsdk:"chart"`
+	Generic *WarehouseGenericSubscriptionModel `tfsdk:"generic"`
 }
 
 type WarehouseImageSubscriptionModel struct {
-	RepoURL              types.String `tfsdk:"repo_url"`
-	SemverConstraint     types.String `tfsdk:"semver_constraint"`
-	TagSelectionStrategy types.String `tfsdk:"tag_selection_strategy"`
-	Platform             types.String `tfsdk:"platform"`
+	RepoURL               types.String `tfsdk:"repo_url"`
+	SemverConstraint      types.String `tfsdk:"semver_constraint"`
+	TagSelectionStrategy  types.String `tfsdk:"tag_selection_strategy"`
+	Platform              types.String `tfsdk:"platform"`
+	AllowTags             types.String `tfsdk:"allow_tags"`
+	AllowTagsRegexes      types.List   `tfsdk:"allow_tags_regexes"`
+	IgnoreTagsRegexes     types.List   `tfsdk:"ignore_tags_regexes"`
+	IgnoreTags            types.List   `tfsdk:"ignore_tags"`
+	CacheByTag            types.Bool   `tfsdk:"cache_by_tag"`
+	DiscoveryLimit        types.Int64  `tfsdk:"discovery_limit"`
+	InsecureSkipTLSVerify types.Bool   `tfsdk:"insecure_skip_tls_verify"`
+	StrictSemvers         types.Bool   `tfsdk:"strict_semvers"`
 }
 
 type WarehouseGitSubscriptionModel struct {
-	RepoURL          types.String `tfsdk:"repo_url"`
-	Branch           types.String `tfsdk:"branch"`
-	SemverConstraint types.String `tfsdk:"semver_constraint"`
+	RepoURL                 types.String `tfsdk:"repo_url"`
+	Branch                  types.String `tfsdk:"branch"`
+	SemverConstraint        types.String `tfsdk:"semver_constraint"`
+	CommitSelectionStrategy types.String `tfsdk:"commit_selection_strategy"`
+	AllowTags               types.String `tfsdk:"allow_tags"`
+	AllowTagsRegexes        types.List   `tfsdk:"allow_tags_regexes"`
+	IgnoreTagsRegexes       types.List   `tfsdk:"ignore_tags_regexes"`
+	IgnoreTags              types.List   `tfsdk:"ignore_tags"`
+	IncludePaths            types.List   `tfsdk:"include_paths"`
+	ExcludePaths            types.List   `tfsdk:"exclude_paths"`
+	ExpressionFilter        types.String `tfsdk:"expression_filter"`
+	Since                   types.String `tfsdk:"since"`
+	Blobless                types.Bool   `tfsdk:"blobless"`
+	DiscoveryLimit          types.Int64  `tfsdk:"discovery_limit"`
+	InsecureSkipTLSVerify   types.Bool   `tfsdk:"insecure_skip_tls_verify"`
+	StrictSemvers           types.Bool   `tfsdk:"strict_semvers"`
 }
 
 type WarehouseChartSubscriptionModel struct {
-	RepoURL          types.String `tfsdk:"repo_url"`
-	Name             types.String `tfsdk:"name"`
-	SemverConstraint types.String `tfsdk:"semver_constraint"`
+	RepoURL               types.String `tfsdk:"repo_url"`
+	Name                  types.String `tfsdk:"name"`
+	SemverConstraint      types.String `tfsdk:"semver_constraint"`
+	DiscoveryLimit        types.Int64  `tfsdk:"discovery_limit"`
+	InsecureSkipTLSVerify types.Bool   `tfsdk:"insecure_skip_tls_verify"`
+}
+
+type WarehouseGenericSubscriptionModel struct {
+	Type           types.String `tfsdk:"type"`
+	Config         types.String `tfsdk:"config"`
+	DiscoveryLimit types.Int64  `tfsdk:"discovery_limit"`
 }
 
 func NewWarehouseResource() resource.Resource {
@@ -92,6 +132,10 @@ func (r *WarehouseResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
+			"shard":                     optionalWarehouseString("Shard that the warehouse belongs to."),
+			"interval":                  schema.StringAttribute{Optional: true, Computed: true, CustomType: durationType{}, Default: stringdefault.StaticString("5m"), Description: "How often Kargo discovers artifacts, such as 5m."},
+			"freight_creation_policy":   schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("Automatic"), Description: "Whether Kargo creates Freight automatically or manually.", Validators: []validator.String{stringvalidator.OneOf("Automatic", "Manual")}},
+			"freight_creation_criteria": optionalWarehouseString("Expression that must evaluate to true before automatic Freight creation."),
 		},
 		Blocks: map[string]schema.Block{
 			"subscription": schema.ListNestedBlock{
@@ -100,69 +144,95 @@ func (r *WarehouseResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 					listvalidator.SizeAtLeast(1),
 				},
 				NestedObject: schema.NestedBlockObject{
+					Attributes: map[string]schema.Attribute{
+						"name": optionalWarehouseString("Unique subscription name. Required for generic subscriptions; not supported for image, Git, or chart subscriptions."),
+					},
 					Blocks: map[string]schema.Block{
 						"image": schema.SingleNestedBlock{
 							Description: "Container image repository subscription.",
-							Attributes: map[string]schema.Attribute{
-								"repo_url": schema.StringAttribute{
-									Optional:    true,
-									Description: "The image repository URL without a tag. Required when image is set.",
-								},
-								"semver_constraint": schema.StringAttribute{
-									Optional:    true,
-									Description: "SemVer constraint for acceptable image tags.",
-								},
-								"tag_selection_strategy": schema.StringAttribute{
-									Optional:    true,
-									Description: "Image tag selection strategy.",
-									Validators: []validator.String{
-										stringvalidator.OneOf("Digest", "Lexical", "NewestBuild", "SemVer"),
-									},
-								},
-								"platform": schema.StringAttribute{
-									Optional:    true,
-									Description: "Target image platform, such as linux/amd64.",
-								},
-							},
+							Attributes:  warehouseImageAttributes(),
 						},
 						"git": schema.SingleNestedBlock{
 							Description: "Git repository subscription.",
-							Attributes: map[string]schema.Attribute{
-								"repo_url": schema.StringAttribute{
-									Optional:    true,
-									Description: "The Git repository URL. Required when git is set.",
-								},
-								"branch": schema.StringAttribute{
-									Optional:    true,
-									Description: "Branch to watch.",
-								},
-								"semver_constraint": schema.StringAttribute{
-									Optional:    true,
-									Description: "SemVer constraint for acceptable Git tags.",
-								},
-							},
+							Attributes:  warehouseGitAttributes(),
 						},
 						"chart": schema.SingleNestedBlock{
 							Description: "Helm chart repository subscription.",
-							Attributes: map[string]schema.Attribute{
-								"repo_url": schema.StringAttribute{
-									Optional:    true,
-									Description: "The Helm chart repository URL. Required when chart is set.",
-								},
-								"name": schema.StringAttribute{
-									Optional:    true,
-									Description: "The chart name for classic chart repositories.",
-								},
-								"semver_constraint": schema.StringAttribute{
-									Optional:    true,
-									Description: "SemVer constraint for acceptable chart versions.",
-								},
-							},
+							Attributes:  warehouseChartAttributes(),
 						},
+						"generic": schema.SingleNestedBlock{Description: "Subscription implemented by a Kargo extension.", Attributes: map[string]schema.Attribute{
+							"type":            schema.StringAttribute{Optional: true, Description: "Kargo subscription type. Required when generic is set."},
+							"config":          schema.StringAttribute{Optional: true, Description: "JSON object understood by the selected Kargo subscription type."},
+							"discovery_limit": optionalWarehouseInt("Maximum number of artifacts to discover. Supported values are 1 through 100. Defaults to 20."),
+						}},
 					},
 				},
 			},
 		},
+	}
+}
+
+func optionalWarehouseString(description string) schema.StringAttribute {
+	return schema.StringAttribute{Optional: true, Description: description}
+}
+
+func optionalWarehouseBool(description string) schema.BoolAttribute {
+	return schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), Description: description}
+}
+
+func optionalWarehouseInt(description string) schema.Int64Attribute {
+	return schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(20), Description: description, Validators: []validator.Int64{int64validator.Between(1, 100)}}
+}
+
+func optionalWarehouseStrings(description string) schema.ListAttribute {
+	return schema.ListAttribute{Optional: true, ElementType: types.StringType, Description: description}
+}
+
+func warehouseImageAttributes() map[string]schema.Attribute {
+	return map[string]schema.Attribute{
+		"repo_url":                 optionalWarehouseString("The image repository URL without a tag. Required when image is set."),
+		"semver_constraint":        optionalWarehouseString("SemVer constraint for acceptable image tags."),
+		"tag_selection_strategy":   schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("SemVer"), Description: "Image tag selection strategy.", Validators: []validator.String{stringvalidator.OneOf("Digest", "Lexical", "NewestBuild", "SemVer")}},
+		"platform":                 optionalWarehouseString("Target image platform, such as linux/amd64."),
+		"allow_tags":               optionalWarehouseString("Deprecated regular expression for image tags to include."),
+		"allow_tags_regexes":       optionalWarehouseStrings("Regular expressions for tags to include."),
+		"ignore_tags_regexes":      optionalWarehouseStrings("Regular expressions for tags to exclude."),
+		"ignore_tags":              optionalWarehouseStrings("Deprecated exact image tags to exclude."),
+		"cache_by_tag":             optionalWarehouseBool("Whether image metadata is cached by tag."),
+		"discovery_limit":          optionalWarehouseInt("Maximum number of image references to discover."),
+		"insecure_skip_tls_verify": optionalWarehouseBool("Whether to skip TLS certificate verification."),
+		"strict_semvers":           schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true), Description: "Whether SemVer selection accepts only strict versions."},
+	}
+}
+
+func warehouseGitAttributes() map[string]schema.Attribute {
+	return map[string]schema.Attribute{
+		"repo_url":                  optionalWarehouseString("The Git repository URL. Required when git is set."),
+		"branch":                    optionalWarehouseString("Branch to watch."),
+		"semver_constraint":         optionalWarehouseString("SemVer constraint for acceptable Git tags."),
+		"commit_selection_strategy": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("NewestFromBranch"), Description: "Strategy for selecting commits.", Validators: []validator.String{stringvalidator.OneOf("Lexical", "NewestFromBranch", "NewestTag", "SemVer")}},
+		"allow_tags":                optionalWarehouseString("Deprecated regular expression for Git tags to include."),
+		"allow_tags_regexes":        optionalWarehouseStrings("Regular expressions for Git tags to include."),
+		"ignore_tags_regexes":       optionalWarehouseStrings("Regular expressions for Git tags to exclude."),
+		"ignore_tags":               optionalWarehouseStrings("Deprecated exact Git tags to exclude."),
+		"include_paths":             optionalWarehouseStrings("Paths that trigger Freight creation."),
+		"exclude_paths":             optionalWarehouseStrings("Paths that do not trigger Freight creation."),
+		"expression_filter":         optionalWarehouseString("Expression used to filter candidate commits or tags."),
+		"since":                     optionalWarehouseString("RFC 3339 cutoff for commit discovery."),
+		"blobless":                  optionalWarehouseBool("Whether to use blobless Git clones."),
+		"discovery_limit":           optionalWarehouseInt("Maximum number of commits to discover."),
+		"insecure_skip_tls_verify":  optionalWarehouseBool("Whether to skip TLS certificate verification."),
+		"strict_semvers":            schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true), Description: "Whether SemVer selection accepts only strict versions."},
+	}
+}
+
+func warehouseChartAttributes() map[string]schema.Attribute {
+	return map[string]schema.Attribute{
+		"repo_url":                 optionalWarehouseString("The Helm chart repository URL. Required when chart is set."),
+		"name":                     optionalWarehouseString("The chart name for classic chart repositories."),
+		"semver_constraint":        optionalWarehouseString("SemVer constraint for acceptable chart versions."),
+		"discovery_limit":          optionalWarehouseInt("Maximum number of chart versions to discover."),
+		"insecure_skip_tls_verify": optionalWarehouseBool("Whether to skip TLS certificate verification."),
 	}
 }
 
@@ -189,7 +259,7 @@ func (r *WarehouseResource) Create(ctx context.Context, req resource.CreateReque
 		return
 	}
 
-	spec, err := expandWarehouseSpec(data.Subscription)
+	spec, err := expandWarehouseResource(&data)
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid warehouse subscription", err.Error())
 		return
@@ -242,7 +312,7 @@ func (r *WarehouseResource) Update(ctx context.Context, req resource.UpdateReque
 		return
 	}
 
-	spec, err := expandWarehouseSpec(data.Subscription)
+	spec, err := expandWarehouseResource(&data)
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid warehouse subscription", err.Error())
 		return
@@ -315,14 +385,26 @@ func parseWarehouseID(id string) (project, name string, err error) {
 }
 
 func expandWarehouseSpec(subs []WarehouseSubscriptionModel) (client.WarehouseSpec, error) {
+	return expandWarehouseResource(&WarehouseResourceModel{Subscription: subs})
+}
+
+func expandWarehouseResource(data *WarehouseResourceModel) (client.WarehouseSpec, error) {
+	subs := data.Subscription
 	if len(subs) == 0 {
 		return client.WarehouseSpec{}, fmt.Errorf("warehouse must have at least one subscription")
 	}
 
 	spec := client.WarehouseSpec{
-		Subscriptions: make([]client.WarehouseSubscription, 0, len(subs)),
+		Shard:                 valueString(data.Shard),
+		Interval:              valueString(data.Interval.StringValue),
+		FreightCreationPolicy: valueString(data.FreightCreationPolicy),
+		Subscriptions:         make([]client.WarehouseSubscription, 0, len(subs)),
+	}
+	if expression := valueString(data.FreightCreationCriteria); expression != "" {
+		spec.FreightCreationCriteria = &client.FreightCreationCriteria{Expression: expression}
 	}
 
+	names := make(map[string]bool)
 	for i, sub := range subs {
 		kinds := 0
 		if sub.Image != nil {
@@ -334,11 +416,17 @@ func expandWarehouseSpec(subs []WarehouseSubscriptionModel) (client.WarehouseSpe
 		if sub.Chart != nil {
 			kinds++
 		}
+		if sub.Generic != nil {
+			kinds++
+		}
 		if kinds != 1 {
-			return client.WarehouseSpec{}, fmt.Errorf("subscription %d must set exactly one of image, git, or chart", i)
+			return client.WarehouseSpec{}, fmt.Errorf("subscription %d must set exactly one of image, git, chart, or generic", i)
 		}
 
-		expanded := client.WarehouseSubscription{}
+		expanded := client.WarehouseSubscription{Name: valueString(sub.Name)}
+		if sub.Generic == nil && expanded.Name != "" {
+			return client.WarehouseSpec{}, fmt.Errorf("subscription %d name is only supported for generic subscriptions", i)
+		}
 		if sub.Image != nil {
 			repoURL, err := requiredWarehouseString(sub.Image.RepoURL, i, "image.repo_url")
 			if err != nil {
@@ -346,9 +434,17 @@ func expandWarehouseSpec(subs []WarehouseSubscriptionModel) (client.WarehouseSpe
 			}
 			expanded.Image = &client.ImageSubscription{
 				RepoURL:                repoURL,
+				AllowTags:              valueString(sub.Image.AllowTags),
 				Constraint:             valueString(sub.Image.SemverConstraint),
 				ImageSelectionStrategy: valueString(sub.Image.TagSelectionStrategy),
 				Platform:               valueString(sub.Image.Platform),
+				AllowTagsRegexes:       stringListValue(sub.Image.AllowTagsRegexes),
+				IgnoreTagsRegexes:      stringListValue(sub.Image.IgnoreTagsRegexes),
+				IgnoreTags:             stringListValue(sub.Image.IgnoreTags),
+				CacheByTag:             boolPointer(sub.Image.CacheByTag),
+				DiscoveryLimit:         int64Pointer(sub.Image.DiscoveryLimit),
+				InsecureSkipTLSVerify:  boolPointer(sub.Image.InsecureSkipTLSVerify),
+				StrictSemvers:          boolPointer(sub.Image.StrictSemvers),
 			}
 		}
 		if sub.Git != nil {
@@ -357,12 +453,22 @@ func expandWarehouseSpec(subs []WarehouseSubscriptionModel) (client.WarehouseSpe
 				return client.WarehouseSpec{}, err
 			}
 			git := &client.GitSubscription{
-				RepoURL:          repoURL,
-				Branch:           valueString(sub.Git.Branch),
-				SemverConstraint: valueString(sub.Git.SemverConstraint),
-			}
-			if git.SemverConstraint != "" {
-				git.CommitSelectionStrategy = "SemVer"
+				RepoURL:                 repoURL,
+				AllowTags:               valueString(sub.Git.AllowTags),
+				Branch:                  valueString(sub.Git.Branch),
+				SemverConstraint:        valueString(sub.Git.SemverConstraint),
+				CommitSelectionStrategy: valueString(sub.Git.CommitSelectionStrategy),
+				AllowTagsRegexes:        stringListValue(sub.Git.AllowTagsRegexes),
+				IgnoreTagsRegexes:       stringListValue(sub.Git.IgnoreTagsRegexes),
+				IgnoreTags:              stringListValue(sub.Git.IgnoreTags),
+				IncludePaths:            stringListValue(sub.Git.IncludePaths),
+				ExcludePaths:            stringListValue(sub.Git.ExcludePaths),
+				ExpressionFilter:        valueString(sub.Git.ExpressionFilter),
+				Since:                   valueString(sub.Git.Since),
+				Blobless:                boolPointer(sub.Git.Blobless),
+				DiscoveryLimit:          int64Pointer(sub.Git.DiscoveryLimit),
+				InsecureSkipTLSVerify:   boolPointer(sub.Git.InsecureSkipTLSVerify),
+				StrictSemvers:           boolPointer(sub.Git.StrictSemvers),
 			}
 			expanded.Git = git
 		}
@@ -372,10 +478,30 @@ func expandWarehouseSpec(subs []WarehouseSubscriptionModel) (client.WarehouseSpe
 				return client.WarehouseSpec{}, err
 			}
 			expanded.Chart = &client.ChartSubscription{
-				RepoURL:          repoURL,
-				Name:             valueString(sub.Chart.Name),
-				SemverConstraint: valueString(sub.Chart.SemverConstraint),
+				RepoURL:               repoURL,
+				Name:                  valueString(sub.Chart.Name),
+				SemverConstraint:      valueString(sub.Chart.SemverConstraint),
+				DiscoveryLimit:        int64Pointer(sub.Chart.DiscoveryLimit),
+				InsecureSkipTLSVerify: boolPointer(sub.Chart.InsecureSkipTLSVerify),
 			}
+		}
+		if sub.Generic != nil {
+			kind, err := requiredWarehouseString(sub.Generic.Type, i, "generic.type")
+			if err != nil {
+				return client.WarehouseSpec{}, err
+			}
+			if kind == "git" || kind == "image" || kind == "chart" {
+				return client.WarehouseSpec{}, fmt.Errorf("subscription %d generic.type %q requires its dedicated subscription block", i, kind)
+			}
+			config, err := requiredWarehouseJSONObject(sub.Generic.Config, i, "generic.config")
+			if err != nil {
+				return client.WarehouseSpec{}, err
+			}
+			if expanded.Name == "" || names[expanded.Name] {
+				return client.WarehouseSpec{}, fmt.Errorf("subscription %d generic subscription requires a non-empty unique name", i)
+			}
+			names[expanded.Name] = true
+			expanded.Generic = &client.GenericSubscription{Type: kind, Config: config, DiscoveryLimit: int64Pointer(sub.Generic.DiscoveryLimit)}
 		}
 		spec.Subscriptions = append(spec.Subscriptions, expanded)
 	}
@@ -390,6 +516,95 @@ func requiredWarehouseString(value types.String, index int, field string) (strin
 	return value.ValueString(), nil
 }
 
+func requiredWarehouseJSONObject(value types.String, index int, field string) (json.RawMessage, error) {
+	text, err := requiredWarehouseString(value, index, field)
+	if err != nil {
+		return nil, err
+	}
+	var object map[string]any
+	if err := json.Unmarshal([]byte(text), &object); err != nil {
+		return nil, fmt.Errorf("subscription %d %s must be a JSON object: %w", index, field, err)
+	}
+	if object == nil {
+		return nil, fmt.Errorf("subscription %d %s must be a JSON object, not null", index, field)
+	}
+	return json.RawMessage(text), nil
+}
+
+func stringListValue(value types.List) []string {
+	if value.IsNull() || value.IsUnknown() {
+		return nil
+	}
+	var values []string
+	if value.ElementsAs(context.Background(), &values, false).HasError() {
+		return nil
+	}
+	return values
+}
+
+func boolPointer(value types.Bool) *bool {
+	if value.IsNull() || value.IsUnknown() {
+		return nil
+	}
+	result := value.ValueBool()
+	return &result
+}
+func int64Pointer(value types.Int64) *int64 {
+	if value.IsNull() || value.IsUnknown() {
+		return nil
+	}
+	result := value.ValueInt64()
+	return &result
+}
+func optionalBool(value *bool) types.Bool {
+	if value == nil {
+		return types.BoolNull()
+	}
+	return types.BoolValue(*value)
+}
+func optionalInt64(value *int64) types.Int64 {
+	if value == nil {
+		return types.Int64Null()
+	}
+	return types.Int64Value(*value)
+}
+func stringList(values []string) types.List {
+	if len(values) == 0 {
+		return types.ListNull(types.StringType)
+	}
+	result, diags := types.ListValueFrom(context.Background(), types.StringType, values)
+	if diags.HasError() {
+		return types.ListNull(types.StringType)
+	}
+	return result
+}
+
+func priorWarehouseString(model *WarehouseResourceModel, field string) types.String {
+	if model == nil {
+		return types.StringValue("__import__")
+	}
+	switch field {
+	case "shard":
+		return model.Shard
+	case "interval":
+		return model.Interval.StringValue
+	case "freight_creation_policy":
+		return model.FreightCreationPolicy
+	case "freight_creation_criteria":
+		return model.FreightCreationCriteria
+	}
+	return types.StringNull()
+}
+func priorSubscriptionString(model *WarehouseSubscriptionModel, field string) types.String {
+	if model == nil {
+		return types.StringValue("__import__")
+	}
+	if field == "name" {
+		return model.Name
+	}
+	return types.StringNull()
+}
+
 func flattenWarehouse(project string, warehouse *client.Warehouse, prior *WarehouseResourceModel) WarehouseResourceModel {
 	resolvedProject := warehouse.Metadata.Namespace
 	if resolvedProject == "" {
@@ -397,10 +612,18 @@ func flattenWarehouse(project string, warehouse *client.Warehouse, prior *Wareho
 	}
 
 	data := WarehouseResourceModel{
-		Project:      types.StringValue(resolvedProject),
-		Name:         types.StringValue(warehouse.Metadata.Name),
-		ID:           types.StringValue(warehouseID(resolvedProject, warehouse.Metadata.Name)),
-		Subscription: make([]WarehouseSubscriptionModel, 0, len(warehouse.Spec.Subscriptions)),
+		Project:               types.StringValue(resolvedProject),
+		Name:                  types.StringValue(warehouse.Metadata.Name),
+		ID:                    types.StringValue(warehouseID(resolvedProject, warehouse.Metadata.Name)),
+		Shard:                 warehouseComputedStringValue(warehouse.Spec.Shard, priorWarehouseString(prior, "shard")),
+		Interval:              durationValue{StringValue: warehouseComputedStringValue(warehouse.Spec.Interval, priorWarehouseString(prior, "interval"))},
+		FreightCreationPolicy: warehouseComputedStringValue(warehouse.Spec.FreightCreationPolicy, priorWarehouseString(prior, "freight_creation_policy")),
+		Subscription:          make([]WarehouseSubscriptionModel, 0, len(warehouse.Spec.Subscriptions)),
+	}
+	if warehouse.Spec.FreightCreationCriteria != nil {
+		data.FreightCreationCriteria = warehouseComputedStringValue(warehouse.Spec.FreightCreationCriteria.Expression, priorWarehouseString(prior, "freight_creation_criteria"))
+	} else {
+		data.FreightCreationCriteria = types.StringNull()
 	}
 
 	for i, sub := range warehouse.Spec.Subscriptions {
@@ -409,17 +632,24 @@ func flattenWarehouse(project string, warehouse *client.Warehouse, prior *Wareho
 			priorSub = &prior.Subscription[i]
 		}
 
-		flattened := WarehouseSubscriptionModel{}
+		flattened := WarehouseSubscriptionModel{Name: warehouseComputedStringValue(sub.Name, priorSubscriptionString(priorSub, "name"))}
 		if sub.Image != nil {
 			var priorImage *WarehouseImageSubscriptionModel
 			if priorSub != nil {
 				priorImage = priorSub.Image
 			}
+			if priorImage == nil {
+				priorImage = &WarehouseImageSubscriptionModel{}
+			}
 			flattened.Image = &WarehouseImageSubscriptionModel{
 				RepoURL:              types.StringValue(sub.Image.RepoURL),
-				SemverConstraint:     optionalStringValue(sub.Image.Constraint, priorImageString(priorImage, "semver_constraint")),
-				TagSelectionStrategy: optionalStringValue(sub.Image.ImageSelectionStrategy, priorImageString(priorImage, "tag_selection_strategy")),
-				Platform:             optionalStringValue(sub.Image.Platform, priorImageString(priorImage, "platform")),
+				SemverConstraint:     warehouseComputedStringValue(sub.Image.Constraint, priorImageString(priorImage, "semver_constraint")),
+				TagSelectionStrategy: warehouseComputedStringValue(sub.Image.ImageSelectionStrategy, priorImageString(priorImage, "tag_selection_strategy")),
+				Platform:             warehouseComputedStringValue(sub.Image.Platform, priorImageString(priorImage, "platform")),
+				AllowTags:            warehouseComputedStringValue(sub.Image.AllowTags, types.StringValue("__import__")),
+				AllowTagsRegexes:     warehouseStringList(sub.Image.AllowTagsRegexes, priorImage.AllowTagsRegexes), IgnoreTagsRegexes: warehouseStringList(sub.Image.IgnoreTagsRegexes, priorImage.IgnoreTagsRegexes), IgnoreTags: warehouseStringList(sub.Image.IgnoreTags, priorImage.IgnoreTags),
+				CacheByTag: optionalBool(sub.Image.CacheByTag), DiscoveryLimit: optionalInt64(sub.Image.DiscoveryLimit),
+				InsecureSkipTLSVerify: optionalBool(sub.Image.InsecureSkipTLSVerify), StrictSemvers: optionalBool(sub.Image.StrictSemvers),
 			}
 		}
 		if sub.Git != nil {
@@ -427,10 +657,18 @@ func flattenWarehouse(project string, warehouse *client.Warehouse, prior *Wareho
 			if priorSub != nil {
 				priorGit = priorSub.Git
 			}
+			if priorGit == nil {
+				priorGit = &WarehouseGitSubscriptionModel{}
+			}
 			flattened.Git = &WarehouseGitSubscriptionModel{
-				RepoURL:          types.StringValue(sub.Git.RepoURL),
-				Branch:           optionalStringValue(sub.Git.Branch, priorGitString(priorGit, "branch")),
-				SemverConstraint: optionalStringValue(sub.Git.SemverConstraint, priorGitString(priorGit, "semver_constraint")),
+				RepoURL:                 types.StringValue(sub.Git.RepoURL),
+				Branch:                  warehouseComputedStringValue(sub.Git.Branch, priorGitString(priorGit, "branch")),
+				SemverConstraint:        warehouseComputedStringValue(sub.Git.SemverConstraint, priorGitString(priorGit, "semver_constraint")),
+				CommitSelectionStrategy: warehouseComputedStringValue(sub.Git.CommitSelectionStrategy, priorGitString(priorGit, "commit_selection_strategy")),
+				AllowTags:               warehouseComputedStringValue(sub.Git.AllowTags, types.StringValue("__import__")),
+				AllowTagsRegexes:        warehouseStringList(sub.Git.AllowTagsRegexes, priorGit.AllowTagsRegexes), IgnoreTagsRegexes: warehouseStringList(sub.Git.IgnoreTagsRegexes, priorGit.IgnoreTagsRegexes), IgnoreTags: warehouseStringList(sub.Git.IgnoreTags, priorGit.IgnoreTags), IncludePaths: warehouseStringList(sub.Git.IncludePaths, priorGit.IncludePaths), ExcludePaths: warehouseStringList(sub.Git.ExcludePaths, priorGit.ExcludePaths),
+				ExpressionFilter: warehouseComputedStringValue(sub.Git.ExpressionFilter, priorGitString(priorGit, "expression_filter")), Since: warehouseComputedStringValue(sub.Git.Since, priorGitString(priorGit, "since")),
+				Blobless: optionalBool(sub.Git.Blobless), DiscoveryLimit: optionalInt64(sub.Git.DiscoveryLimit), InsecureSkipTLSVerify: optionalBool(sub.Git.InsecureSkipTLSVerify), StrictSemvers: optionalBool(sub.Git.StrictSemvers),
 			}
 		}
 		if sub.Chart != nil {
@@ -440,9 +678,13 @@ func flattenWarehouse(project string, warehouse *client.Warehouse, prior *Wareho
 			}
 			flattened.Chart = &WarehouseChartSubscriptionModel{
 				RepoURL:          types.StringValue(sub.Chart.RepoURL),
-				Name:             optionalStringValue(sub.Chart.Name, priorChartString(priorChart, "name")),
-				SemverConstraint: optionalStringValue(sub.Chart.SemverConstraint, priorChartString(priorChart, "semver_constraint")),
+				Name:             warehouseComputedStringValue(sub.Chart.Name, priorChartString(priorChart, "name")),
+				SemverConstraint: warehouseComputedStringValue(sub.Chart.SemverConstraint, priorChartString(priorChart, "semver_constraint")),
+				DiscoveryLimit:   optionalInt64(sub.Chart.DiscoveryLimit), InsecureSkipTLSVerify: optionalBool(sub.Chart.InsecureSkipTLSVerify),
 			}
+		}
+		if sub.Generic != nil {
+			flattened.Generic = &WarehouseGenericSubscriptionModel{Type: types.StringValue(sub.Generic.Type), Config: types.StringValue(string(sub.Generic.Config)), DiscoveryLimit: optionalInt64(sub.Generic.DiscoveryLimit)}
 		}
 		data.Subscription = append(data.Subscription, flattened)
 	}
@@ -450,11 +692,25 @@ func flattenWarehouse(project string, warehouse *client.Warehouse, prior *Wareho
 	return data
 }
 
+func warehouseStringList(values []string, prior types.List) types.List {
+	if len(values) == 0 && !prior.IsNull() && !prior.IsUnknown() && len(prior.Elements()) == 0 {
+		return prior
+	}
+	return stringList(values)
+}
+
 func valueString(value types.String) string {
 	if value.IsNull() || value.IsUnknown() {
 		return ""
 	}
 	return value.ValueString()
+}
+
+func warehouseComputedStringValue(value string, _ types.String) types.String {
+	if value == "" {
+		return types.StringNull()
+	}
+	return types.StringValue(value)
 }
 
 func optionalStringValue(value string, prior types.String) types.String {
@@ -492,6 +748,12 @@ func priorGitString(model *WarehouseGitSubscriptionModel, field string) types.St
 		return model.Branch
 	case "semver_constraint":
 		return model.SemverConstraint
+	case "commit_selection_strategy":
+		return model.CommitSelectionStrategy
+	case "expression_filter":
+		return model.ExpressionFilter
+	case "since":
+		return model.Since
 	default:
 		return types.StringNull()
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -42,33 +43,127 @@ type Warehouse struct {
 }
 
 type WarehouseSpec struct {
-	Subscriptions []WarehouseSubscription `json:"subscriptions"`
+	Shard                   string                   `json:"shard,omitempty"`
+	Interval                string                   `json:"interval,omitempty"`
+	FreightCreationPolicy   string                   `json:"freightCreationPolicy,omitempty"`
+	FreightCreationCriteria *FreightCreationCriteria `json:"freightCreationCriteria,omitempty"`
+	Subscriptions           []WarehouseSubscription  `json:"subscriptions"`
+}
+
+type FreightCreationCriteria struct {
+	Expression string `json:"expression,omitempty"`
 }
 
 type WarehouseSubscription struct {
-	Image *ImageSubscription `json:"image,omitempty"`
-	Git   *GitSubscription   `json:"git,omitempty"`
-	Chart *ChartSubscription `json:"chart,omitempty"`
+	Name    string               `json:"name,omitempty"`
+	Image   *ImageSubscription   `json:"image,omitempty"`
+	Git     *GitSubscription     `json:"git,omitempty"`
+	Chart   *ChartSubscription   `json:"chart,omitempty"`
+	Generic *GenericSubscription `json:"-"`
+}
+
+// MarshalJSON preserves Kargo's extensible subscription shape: generic
+// subscription kinds are represented by their kind as the top-level key.
+func (s WarehouseSubscription) MarshalJSON() ([]byte, error) {
+	if s.Generic != nil {
+		return json.Marshal(map[string]any{s.Generic.Type: genericSubscriptionManifest{
+			Name: s.Name, Config: s.Generic.Config, DiscoveryLimit: s.Generic.DiscoveryLimit,
+		}})
+	}
+	type known WarehouseSubscription
+	return json.Marshal(known(s))
+}
+
+func (s *WarehouseSubscription) UnmarshalJSON(data []byte) error {
+	var values map[string]json.RawMessage
+	if err := json.Unmarshal(data, &values); err != nil {
+		return err
+	}
+	if len(values) != 1 {
+		return fmt.Errorf("warehouse subscription must specify exactly one type")
+	}
+	for _, value := range values {
+		var object map[string]json.RawMessage
+		if err := json.Unmarshal(value, &object); err != nil || object == nil {
+			return fmt.Errorf("warehouse subscription must be a JSON object")
+		}
+	}
+	var known struct {
+		Name  string             `json:"name,omitempty"`
+		Image *ImageSubscription `json:"image,omitempty"`
+		Git   *GitSubscription   `json:"git,omitempty"`
+		Chart *ChartSubscription `json:"chart,omitempty"`
+	}
+	if err := json.Unmarshal(data, &known); err != nil {
+		return err
+	}
+	*s = WarehouseSubscription{Name: known.Name, Image: known.Image, Git: known.Git, Chart: known.Chart}
+	if s.Image != nil || s.Git != nil || s.Chart != nil {
+		return nil
+	}
+	for kind, config := range values {
+		var manifest genericSubscriptionManifest
+		if err := json.Unmarshal(config, &manifest); err != nil {
+			return err
+		}
+		s.Name = manifest.Name
+		s.Generic = &GenericSubscription{Type: kind, Config: manifest.Config, DiscoveryLimit: manifest.DiscoveryLimit}
+	}
+	return nil
+}
+
+type GenericSubscription struct {
+	Type           string
+	Config         json.RawMessage
+	DiscoveryLimit *int64
+}
+
+type genericSubscriptionManifest struct {
+	Name           string          `json:"name"`
+	Config         json.RawMessage `json:"config,omitempty"`
+	DiscoveryLimit *int64          `json:"discoveryLimit,omitempty"`
 }
 
 type ImageSubscription struct {
-	RepoURL                string `json:"repoURL"`
-	Constraint             string `json:"constraint,omitempty"`
-	ImageSelectionStrategy string `json:"imageSelectionStrategy,omitempty"`
-	Platform               string `json:"platform,omitempty"`
+	RepoURL                string   `json:"repoURL"`
+	AllowTags              string   `json:"allowTags,omitempty"`
+	Constraint             string   `json:"constraint,omitempty"`
+	ImageSelectionStrategy string   `json:"imageSelectionStrategy,omitempty"`
+	Platform               string   `json:"platform,omitempty"`
+	AllowTagsRegexes       []string `json:"allowTagsRegexes,omitempty"`
+	IgnoreTagsRegexes      []string `json:"ignoreTagsRegexes,omitempty"`
+	IgnoreTags             []string `json:"ignoreTags,omitempty"`
+	CacheByTag             *bool    `json:"cacheByTag,omitempty"`
+	DiscoveryLimit         *int64   `json:"discoveryLimit,omitempty"`
+	InsecureSkipTLSVerify  *bool    `json:"insecureSkipTLSVerify,omitempty"`
+	StrictSemvers          *bool    `json:"strictSemvers,omitempty"`
 }
 
 type GitSubscription struct {
-	RepoURL                 string `json:"repoURL"`
-	Branch                  string `json:"branch,omitempty"`
-	CommitSelectionStrategy string `json:"commitSelectionStrategy,omitempty"`
-	SemverConstraint        string `json:"semverConstraint,omitempty"`
+	RepoURL                 string   `json:"repoURL"`
+	AllowTags               string   `json:"allowTags,omitempty"`
+	Branch                  string   `json:"branch,omitempty"`
+	CommitSelectionStrategy string   `json:"commitSelectionStrategy,omitempty"`
+	SemverConstraint        string   `json:"semverConstraint,omitempty"`
+	AllowTagsRegexes        []string `json:"allowTagsRegexes,omitempty"`
+	IgnoreTagsRegexes       []string `json:"ignoreTagsRegexes,omitempty"`
+	IgnoreTags              []string `json:"ignoreTags,omitempty"`
+	IncludePaths            []string `json:"includePaths,omitempty"`
+	ExcludePaths            []string `json:"excludePaths,omitempty"`
+	ExpressionFilter        string   `json:"expressionFilter,omitempty"`
+	Since                   string   `json:"since,omitempty"`
+	Blobless                *bool    `json:"blobless,omitempty"`
+	DiscoveryLimit          *int64   `json:"discoveryLimit,omitempty"`
+	InsecureSkipTLSVerify   *bool    `json:"insecureSkipTLSVerify,omitempty"`
+	StrictSemvers           *bool    `json:"strictSemvers,omitempty"`
 }
 
 type ChartSubscription struct {
-	RepoURL          string `json:"repoURL"`
-	Name             string `json:"name,omitempty"`
-	SemverConstraint string `json:"semverConstraint,omitempty"`
+	RepoURL               string `json:"repoURL"`
+	Name                  string `json:"name,omitempty"`
+	SemverConstraint      string `json:"semverConstraint,omitempty"`
+	DiscoveryLimit        *int64 `json:"discoveryLimit,omitempty"`
+	InsecureSkipTLSVerify *bool  `json:"insecureSkipTLSVerify,omitempty"`
 }
 
 type ProtobufInt64 struct {
@@ -242,7 +337,7 @@ type ApprovedStage struct {
 }
 
 type getWarehouseResponse struct {
-	Warehouse Warehouse `json:"warehouse"`
+	Raw []byte `json:"raw"`
 }
 
 type queryFreightResponse struct {
@@ -268,11 +363,8 @@ type warehouseManifest struct {
 	Spec       WarehouseSpec     `json:"spec"`
 }
 
-// marshalWarehouseManifest cannot fail: warehouseManifest is composed solely of
-// marshal-safe types (strings, maps, slices, nested structs) with no
-// json.RawMessage or custom marshaler fields.
-func marshalWarehouseManifest(project, name string, spec WarehouseSpec) []byte {
-	manifest, _ := json.Marshal(warehouseManifest{
+func marshalWarehouseManifest(project, name string, spec WarehouseSpec) ([]byte, error) {
+	return json.Marshal(warehouseManifest{
 		APIVersion: "kargo.akuity.io/v1alpha1",
 		Kind:       "Warehouse",
 		Metadata: WarehouseMetadata{
@@ -281,7 +373,6 @@ func marshalWarehouseManifest(project, name string, spec WarehouseSpec) []byte {
 		},
 		Spec: spec,
 	})
-	return manifest
 }
 
 func checkResourceResult(resp resourceResultResponse) error {
@@ -295,7 +386,11 @@ func checkResourceResult(resp resourceResultResponse) error {
 }
 
 func (c *Client) CreateWarehouse(ctx context.Context, project, name string, spec WarehouseSpec) (*Warehouse, error) {
-	encoded := base64.StdEncoding.EncodeToString(marshalWarehouseManifest(project, name, spec))
+	manifest, err := marshalWarehouseManifest(project, name, spec)
+	if err != nil {
+		return nil, fmt.Errorf("encoding warehouse %q/%q: %w", project, name, err)
+	}
+	encoded := base64.StdEncoding.EncodeToString(manifest)
 
 	var resp resourceResultResponse
 	if err := c.Do(ctx, "CreateResource", map[string]string{"manifest": encoded}, &resp); err != nil {
@@ -311,15 +406,18 @@ func (c *Client) CreateWarehouse(ctx context.Context, project, name string, spec
 // GetWarehouse returns (nil, nil) when the Warehouse exists but is being deleted.
 func (c *Client) GetWarehouse(ctx context.Context, project, name string) (*Warehouse, error) {
 	var resp getWarehouseResponse
-	if err := c.Do(ctx, "GetWarehouse", map[string]string{"project": project, "name": name}, &resp); err != nil {
+	if err := c.Do(ctx, "GetWarehouse", map[string]string{"project": project, "name": name, "format": "RAW_FORMAT_JSON"}, &resp); err != nil {
 		return nil, fmt.Errorf("getting warehouse %q/%q: %w", project, name, err)
 	}
-
-	if resp.Warehouse.Metadata.DeletionTimestamp != nil {
+	var warehouse Warehouse
+	if err := json.Unmarshal(resp.Raw, &warehouse); err != nil {
+		return nil, fmt.Errorf("decoding warehouse %q/%q: %w", project, name, err)
+	}
+	if warehouse.Metadata.DeletionTimestamp != nil {
 		return nil, nil
 	}
 
-	return &resp.Warehouse, nil
+	return &warehouse, nil
 }
 
 func (c *Client) ListWarehouseFreight(ctx context.Context, project, warehouse string) ([]Freight, error) {
@@ -340,10 +438,14 @@ func (c *Client) ListWarehouseFreight(ctx context.Context, project, warehouse st
 }
 
 func (c *Client) UpdateWarehouse(ctx context.Context, project, name string, spec WarehouseSpec) (*Warehouse, error) {
-	encoded := base64.StdEncoding.EncodeToString(marshalWarehouseManifest(project, name, spec))
+	manifest, err := marshalWarehouseManifest(project, name, spec)
+	if err != nil {
+		return nil, fmt.Errorf("encoding warehouse %q/%q: %w", project, name, err)
+	}
+	encoded := base64.StdEncoding.EncodeToString(manifest)
 
 	var resp resourceResultResponse
-	if err := c.Do(ctx, "UpdateResource", map[string]string{"manifest": encoded}, &resp); err != nil {
+	if err := c.updateWarehouseManifest(ctx, encoded, &resp); err != nil {
 		return nil, fmt.Errorf("updating warehouse %q/%q: %w", project, name, err)
 	}
 	if err := checkResourceResult(resp); err != nil {
@@ -351,6 +453,25 @@ func (c *Client) UpdateWarehouse(ctx context.Context, project, name string, spec
 	}
 
 	return c.GetWarehouse(ctx, project, name)
+}
+
+// Kargo reads the current resourceVersion before updating a manifest. Its
+// controller can update status between those operations, requiring a fresh RPC.
+func (c *Client) updateWarehouseManifest(ctx context.Context, manifest string, resp *resourceResultResponse) error {
+	for attempt := 0; ; attempt++ {
+		err := c.Do(ctx, "UpdateResource", map[string]string{"manifest": manifest}, resp)
+		var apiErr *APIError
+		if err == nil || attempt == 2 || !errors.As(err, &apiErr) || apiErr.HTTPStatus != 409 || !strings.Contains(apiErr.Message, "the object has been modified") {
+			return err
+		}
+		timer := time.NewTimer(time.Duration(attempt+1) * 100 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 
 func (c *Client) DeleteWarehouse(ctx context.Context, project, name string) error {
