@@ -2,9 +2,11 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -29,6 +31,18 @@ func TestWarehouseLiveLifecycle(t *testing.T) {
 	t.Cleanup(func() {
 		if err := c.DeleteProject(ctx, project); err != nil && !IsNotFound(err) {
 			t.Errorf("cleaning up test project %s: %v", project, err)
+		}
+	})
+	t.Run("unregistered generic subscriber", func(t *testing.T) {
+		_, err := c.CreateWarehouse(ctx, project, "unknown-subscriber", WarehouseSpec{Subscriptions: []WarehouseSubscription{{
+			Name: "test-artifacts", Generic: &GenericSubscription{Type: "unregistered-test-subscriber", Config: json.RawMessage(`{"test":true}`)},
+		}}})
+		if err == nil {
+			t.Fatal("expected Kargo to reject an unregistered subscriber")
+		}
+		t.Logf("Kargo rejection: %v", err)
+		if !strings.Contains(err.Error(), "no matching registration found") {
+			t.Fatalf("unexpected failure: %v", err)
 		}
 	})
 	limit := int64(7)

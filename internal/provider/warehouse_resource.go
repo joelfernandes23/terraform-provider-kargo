@@ -11,7 +11,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -130,8 +133,8 @@ func (r *WarehouseResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 				},
 			},
 			"shard":                     optionalWarehouseString("Shard that the warehouse belongs to."),
-			"interval":                  schema.StringAttribute{Optional: true, Computed: true, CustomType: durationType{}, Description: "How often Kargo discovers artifacts, such as 5m."},
-			"freight_creation_policy":   schema.StringAttribute{Optional: true, Computed: true, Description: "Whether Kargo creates Freight automatically or manually.", Validators: []validator.String{stringvalidator.OneOf("Automatic", "Manual")}},
+			"interval":                  schema.StringAttribute{Optional: true, Computed: true, CustomType: durationType{}, Default: stringdefault.StaticString("5m"), Description: "How often Kargo discovers artifacts, such as 5m."},
+			"freight_creation_policy":   schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("Automatic"), Description: "Whether Kargo creates Freight automatically or manually.", Validators: []validator.String{stringvalidator.OneOf("Automatic", "Manual")}},
 			"freight_creation_criteria": optionalWarehouseString("Expression that must evaluate to true before automatic Freight creation."),
 		},
 		Blocks: map[string]schema.Block{
@@ -170,26 +173,26 @@ func (r *WarehouseResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 }
 
 func optionalWarehouseString(description string) schema.StringAttribute {
-	return schema.StringAttribute{Optional: true, Computed: true, Description: description}
+	return schema.StringAttribute{Optional: true, Description: description}
 }
 
 func optionalWarehouseBool(description string) schema.BoolAttribute {
-	return schema.BoolAttribute{Optional: true, Computed: true, Description: description}
+	return schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), Description: description}
 }
 
 func optionalWarehouseInt(description string) schema.Int64Attribute {
-	return schema.Int64Attribute{Optional: true, Computed: true, Description: description, Validators: []validator.Int64{int64validator.Between(1, 100)}}
+	return schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(20), Description: description, Validators: []validator.Int64{int64validator.Between(1, 100)}}
 }
 
 func optionalWarehouseStrings(description string) schema.ListAttribute {
-	return schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType, Description: description}
+	return schema.ListAttribute{Optional: true, ElementType: types.StringType, Description: description}
 }
 
 func warehouseImageAttributes() map[string]schema.Attribute {
 	return map[string]schema.Attribute{
 		"repo_url":                 optionalWarehouseString("The image repository URL without a tag. Required when image is set."),
 		"semver_constraint":        optionalWarehouseString("SemVer constraint for acceptable image tags."),
-		"tag_selection_strategy":   schema.StringAttribute{Optional: true, Computed: true, Description: "Image tag selection strategy.", Validators: []validator.String{stringvalidator.OneOf("Digest", "Lexical", "NewestBuild", "SemVer")}},
+		"tag_selection_strategy":   schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("SemVer"), Description: "Image tag selection strategy.", Validators: []validator.String{stringvalidator.OneOf("Digest", "Lexical", "NewestBuild", "SemVer")}},
 		"platform":                 optionalWarehouseString("Target image platform, such as linux/amd64."),
 		"allow_tags":               optionalWarehouseString("Deprecated regular expression for image tags to include."),
 		"allow_tags_regexes":       optionalWarehouseStrings("Regular expressions for tags to include."),
@@ -198,7 +201,7 @@ func warehouseImageAttributes() map[string]schema.Attribute {
 		"cache_by_tag":             optionalWarehouseBool("Whether image metadata is cached by tag."),
 		"discovery_limit":          optionalWarehouseInt("Maximum number of image references to discover."),
 		"insecure_skip_tls_verify": optionalWarehouseBool("Whether to skip TLS certificate verification."),
-		"strict_semvers":           optionalWarehouseBool("Whether SemVer selection accepts only strict versions."),
+		"strict_semvers":           schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true), Description: "Whether SemVer selection accepts only strict versions."},
 	}
 }
 
@@ -207,7 +210,7 @@ func warehouseGitAttributes() map[string]schema.Attribute {
 		"repo_url":                  optionalWarehouseString("The Git repository URL. Required when git is set."),
 		"branch":                    optionalWarehouseString("Branch to watch."),
 		"semver_constraint":         optionalWarehouseString("SemVer constraint for acceptable Git tags."),
-		"commit_selection_strategy": schema.StringAttribute{Optional: true, Computed: true, Description: "Strategy for selecting commits.", Validators: []validator.String{stringvalidator.OneOf("Lexical", "NewestFromBranch", "NewestTag", "SemVer")}},
+		"commit_selection_strategy": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("NewestFromBranch"), Description: "Strategy for selecting commits.", Validators: []validator.String{stringvalidator.OneOf("Lexical", "NewestFromBranch", "NewestTag", "SemVer")}},
 		"allow_tags":                optionalWarehouseString("Deprecated regular expression for Git tags to include."),
 		"allow_tags_regexes":        optionalWarehouseStrings("Regular expressions for Git tags to include."),
 		"ignore_tags_regexes":       optionalWarehouseStrings("Regular expressions for Git tags to exclude."),
@@ -219,7 +222,7 @@ func warehouseGitAttributes() map[string]schema.Attribute {
 		"blobless":                  optionalWarehouseBool("Whether to use blobless Git clones."),
 		"discovery_limit":           optionalWarehouseInt("Maximum number of commits to discover."),
 		"insecure_skip_tls_verify":  optionalWarehouseBool("Whether to skip TLS certificate verification."),
-		"strict_semvers":            optionalWarehouseBool("Whether SemVer selection accepts only strict versions."),
+		"strict_semvers":            schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true), Description: "Whether SemVer selection accepts only strict versions."},
 	}
 }
 
@@ -635,13 +638,16 @@ func flattenWarehouse(project string, warehouse *client.Warehouse, prior *Wareho
 			if priorSub != nil {
 				priorImage = priorSub.Image
 			}
+			if priorImage == nil {
+				priorImage = &WarehouseImageSubscriptionModel{}
+			}
 			flattened.Image = &WarehouseImageSubscriptionModel{
 				RepoURL:              types.StringValue(sub.Image.RepoURL),
 				SemverConstraint:     warehouseComputedStringValue(sub.Image.Constraint, priorImageString(priorImage, "semver_constraint")),
 				TagSelectionStrategy: warehouseComputedStringValue(sub.Image.ImageSelectionStrategy, priorImageString(priorImage, "tag_selection_strategy")),
 				Platform:             warehouseComputedStringValue(sub.Image.Platform, priorImageString(priorImage, "platform")),
 				AllowTags:            warehouseComputedStringValue(sub.Image.AllowTags, types.StringValue("__import__")),
-				AllowTagsRegexes:     stringList(sub.Image.AllowTagsRegexes), IgnoreTagsRegexes: stringList(sub.Image.IgnoreTagsRegexes), IgnoreTags: stringList(sub.Image.IgnoreTags),
+				AllowTagsRegexes:     warehouseStringList(sub.Image.AllowTagsRegexes, priorImage.AllowTagsRegexes), IgnoreTagsRegexes: warehouseStringList(sub.Image.IgnoreTagsRegexes, priorImage.IgnoreTagsRegexes), IgnoreTags: warehouseStringList(sub.Image.IgnoreTags, priorImage.IgnoreTags),
 				CacheByTag: optionalBool(sub.Image.CacheByTag), DiscoveryLimit: optionalInt64(sub.Image.DiscoveryLimit),
 				InsecureSkipTLSVerify: optionalBool(sub.Image.InsecureSkipTLSVerify), StrictSemvers: optionalBool(sub.Image.StrictSemvers),
 			}
@@ -651,13 +657,16 @@ func flattenWarehouse(project string, warehouse *client.Warehouse, prior *Wareho
 			if priorSub != nil {
 				priorGit = priorSub.Git
 			}
+			if priorGit == nil {
+				priorGit = &WarehouseGitSubscriptionModel{}
+			}
 			flattened.Git = &WarehouseGitSubscriptionModel{
 				RepoURL:                 types.StringValue(sub.Git.RepoURL),
 				Branch:                  warehouseComputedStringValue(sub.Git.Branch, priorGitString(priorGit, "branch")),
 				SemverConstraint:        warehouseComputedStringValue(sub.Git.SemverConstraint, priorGitString(priorGit, "semver_constraint")),
 				CommitSelectionStrategy: warehouseComputedStringValue(sub.Git.CommitSelectionStrategy, priorGitString(priorGit, "commit_selection_strategy")),
 				AllowTags:               warehouseComputedStringValue(sub.Git.AllowTags, types.StringValue("__import__")),
-				AllowTagsRegexes:        stringList(sub.Git.AllowTagsRegexes), IgnoreTagsRegexes: stringList(sub.Git.IgnoreTagsRegexes), IgnoreTags: stringList(sub.Git.IgnoreTags), IncludePaths: stringList(sub.Git.IncludePaths), ExcludePaths: stringList(sub.Git.ExcludePaths),
+				AllowTagsRegexes:        warehouseStringList(sub.Git.AllowTagsRegexes, priorGit.AllowTagsRegexes), IgnoreTagsRegexes: warehouseStringList(sub.Git.IgnoreTagsRegexes, priorGit.IgnoreTagsRegexes), IgnoreTags: warehouseStringList(sub.Git.IgnoreTags, priorGit.IgnoreTags), IncludePaths: warehouseStringList(sub.Git.IncludePaths, priorGit.IncludePaths), ExcludePaths: warehouseStringList(sub.Git.ExcludePaths, priorGit.ExcludePaths),
 				ExpressionFilter: warehouseComputedStringValue(sub.Git.ExpressionFilter, priorGitString(priorGit, "expression_filter")), Since: warehouseComputedStringValue(sub.Git.Since, priorGitString(priorGit, "since")),
 				Blobless: optionalBool(sub.Git.Blobless), DiscoveryLimit: optionalInt64(sub.Git.DiscoveryLimit), InsecureSkipTLSVerify: optionalBool(sub.Git.InsecureSkipTLSVerify), StrictSemvers: optionalBool(sub.Git.StrictSemvers),
 			}
@@ -681,6 +690,13 @@ func flattenWarehouse(project string, warehouse *client.Warehouse, prior *Wareho
 	}
 
 	return data
+}
+
+func warehouseStringList(values []string, prior types.List) types.List {
+	if len(values) == 0 && !prior.IsNull() && !prior.IsUnknown() && len(prior.Elements()) == 0 {
+		return prior
+	}
+	return stringList(values)
 }
 
 func valueString(value types.String) string {
